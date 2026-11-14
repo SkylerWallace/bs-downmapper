@@ -1,0 +1,195 @@
+{
+  "schemaVersion": 1,
+  "maps": [
+    {
+      "key": "10a28",
+      "title": "Zero Visibility",
+      "songAuthor": "Rise Against",
+      "mapper": "Skyler Wallace",
+      "baseBpm": 135,
+      "mapId": "10a28",
+      "usage": "paired-reference",
+      "comments": "Tempo changes and bomb-heavy choreography. Review clearance around retained reset cues."
+    },
+    {
+      "key": "10f26",
+      "title": "Wake Me Up When September Ends",
+      "songAuthor": "Green Day",
+      "mapper": "Skyler Wallace",
+      "baseBpm": 105,
+      "mapId": "10f26",
+      "usage": "paired-reference",
+      "comments": "Manually adjusted acoustic guitar attacks, including early and late strums near the beat. Preserve the original timestamps. Sustained tempo drift and expressive microtiming are distinct."
+    },
+    {
+      "key": "1e1e5",
+      "title": "Move",
+      "songAuthor": "Saint Motel",
+      "mapper": "Skyler Wallace",
+      "baseBpm": 101,
+      "mapId": "1e1e5",
+      "usage": "paired-reference",
+      "comments": "Repeated handoff motif around beats 73–74.5 and intentional bomb-guided parity resets around beats 266–268. Useful for independent rhythm and pattern tests."
+    },
+    {
+      "key": "40a54",
+      "title": "Iris",
+      "songAuthor": "Goo Goo Dolls",
+      "mapper": "Skyler Wallace",
+      "baseBpm": 77.0,
+      "mapId": "40a54",
+      "usage": "paired-reference",
+      "comments": "Mixed 4/4 and 6/8 meter, variable tempo, low base BPM, and changing guitar, vocal, and percussion emphasis. Meticulous authored spread with arcs and chains."
+    },
+    {
+      "key": "4c886",
+      "title": "Superhuman",
+      "songAuthor": "Blackgummy",
+      "mapper": "Skyler Wallace",
+      "baseBpm": 128.0,
+      "mapId": "4c886",
+      "usage": "paired-reference",
+      "comments": "Modern full Standard spread for held-out rhythm and pattern checks."
+    },
+    {
+      "key": "9a88",
+      "title": "Death Blossoms",
+      "songAuthor": "Rise Against",
+      "mapper": "Skyler Wallace",
+      "baseBpm": 174,
+      "mapId": "9a88",
+      "usage": "paired-reference",
+      "comments": "Useful for checking whether phrase budget transfers add unmatched hits or oversimplify the rhythm."
+    },
+    {
+      "key": "9b69",
+      "title": "Rumors of My Demise Have Been Greatly Exaggerated",
+      "songAuthor": "Rise Against",
+      "mapper": "Skyler Wallace",
+      "baseBpm": 110.4,
+      "mapId": "9b69",
+      "usage": "paired-reference",
+      "comments": "Preserve complete recurring spaced entrances before denser runs. Individual hit scores can fragment the figure."
+    },
+    {
+      "key": "9bcf",
+      "title": "Gimme Love",
+      "songAuthor": "Joji",
+      "mapper": "Skyler Wallace",
+      "baseBpm": 158,
+      "mapId": "9bcf",
+      "usage": "paired-reference",
+      "comments": "Strong downbeat feel with sparse fourth-beat accents and a major tempo change. Easy wall choreography changes how the sparse sections read."
+    },
+    {
+      "key": "a751",
+      "title": "Virtual Friends",
+      "songAuthor": "DROELOE",
+      "mapper": "Skyler Wallace",
+      "baseBpm": 150,
+      "mapId": "a751",
+      "usage": "paired-reference",
+      "comments": "Use the full authored spread as a control when adjusting motif confidence."
+    },
+    {
+      "key": "b190",
+      "title": "The Boys Are Back In Town",
+      "songAuthor": "Thin Lizzy",
+      "mapper": "Skyler Wallace",
+      "baseBpm": 162,
+      "mapId": "b190",
+      "usage": "paired-reference",
+      "comments": "Compare recurring groove accents and syncopation against the authored Easy."
+    },
+    {
+      "key": "b5e9",
+      "title": "Stricken",
+      "songAuthor": "Disturbed",
+      "mapper": "Skyler Wallace",
+      "baseBpm": 87,
+      "mapId": "b5e9",
+      "usage": "paired-reference",
+      "comments": "Low base BPM. Use elapsed time to distinguish safe subdivisions from fast passages."
+    },
+    {
+      "key": "b5ea",
+      "title": "Question!",
+      "songAuthor": "System of a Down",
+      "mapper": "Skyler Wallace",
+      "baseBpm": 180,
+      "mapId": "b5ea",
+      "usage": "paired-reference",
+      "comments": "Irregular accents, tempo changes, and acoustic and distorted guitar sections. Audio evidence has helped preserve attacks on the authored Easy."
+    },
+    {
+      "key": "b5eb",
+      "title": "Ashes Of The Innocent",
+      "songAuthor": "Bullet For My Valentine",
+      "mapper": "Skyler Wallace",
+      "baseBpm": 112,
+      "mapId": "b5eb",
+      "usage": "paired-reference",
+      "comments": "Variable tempo. Useful for checking whether local-pulse rules transfer across tempo changes."
+    },
+    {
+      "key": "c815",
+      "title": "Happy?",
+      "songAuthor": "Mudvayne",
+      "mapper": "Skyler Wallace",
+      "baseBpm": 100,
+      "mapId": "c815",
+      "usage": "paired-reference",
+      "comments": "Bomb-heavy passages. Review regressions when adding motif or pulse weighting."
+    },
+    {
+      "key": "e8ef",
+      "title": "Paper Wings",
+      "songAuthor": "Rise Against",
+      "mapper": "Skyler Wallace",
+      "baseBpm": 200,
+      "mapId": "e8ef",
+      "usage": "paired-reference",
+      "comments": "The mapper sometimes follows high rhythm-guitar accents off the whole beat. Whole-beat alternatives can be reasonable on Easy and should be reviewed by ear."
+    },
+    {
+      "key": "b191",
+      "title": "All Along the Watchtower",
+      "songAuthor": "The Jimi Hendrix Experience",
+      "mapper": "Skyler Wallace",
+      "baseBpm": 114.0,
+      "mapId": "b191",
+      "usage": "catalog-candidate",
+      "comments": "Catalog candidate. A complete Standard Expert+/Easy reference pair was unavailable in the local evaluation pool."
+    },
+    {
+      "key": "c848",
+      "title": "I'm Dreaming",
+      "songAuthor": "INZO",
+      "mapper": "Skyler Wallace",
+      "baseBpm": 150.0,
+      "mapId": "c848",
+      "usage": "catalog-candidate",
+      "comments": "Catalog candidate. A complete Standard Expert+/Easy reference pair was unavailable in the local evaluation pool."
+    },
+    {
+      "key": "hailstorm",
+      "title": "Hailstorm",
+      "songAuthor": "Bass Machina",
+      "mapper": "Skyler Wallace",
+      "baseBpm": 140.0,
+      "mapId": null,
+      "usage": "geometry-and-rhythm-regression",
+      "comments": "Sparse opening should need few changes. Keep the vertical and diagonal stream character at 32–36, easing placement. Preserve bomb-led resets and audit arm tangles, reach and visibility."
+    },
+    {
+      "key": "1979",
+      "title": "1979",
+      "songAuthor": "Smashing Pumpkins",
+      "mapper": "Skyler Wallace",
+      "baseBpm": 126.870003,
+      "mapId": null,
+      "usage": "placement-regression",
+      "comments": "Use Standard Expert+ timing to exercise constrained placement near beat 144."
+    }
+  ]
+}

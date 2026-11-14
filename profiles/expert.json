@@ -1,0 +1,50 @@
+{
+  "handAlternation": 0.1,
+  "parityAdherence": 1.00,
+  "name": "Expert conservative rhythm-preserving prototype",
+  "minimumSourceNoteRatio": 0.8,
+  "maximumSourceNoteRatio": 1.0,
+  "maximumSectionPruneFraction": 0.2,
+  "densityWindowBeats": 4,
+  "regularStreamMinimumNotes": 8,
+  "regularStreamMaximumGapBeats": 0.5,
+  "regularStreamRateReviewNps": 10,
+  "diagonalPreference": 2.75,
+  "flexiblePairedPhase": true,
+  "restedBombReentry": true,
+  "transitionPreferences": {
+    "verticalToDiagonal": 0.45,
+    "downToInwardUp": 0.65,
+    "horizontalToInwardDiagonal": 5.0,
+    "parityErrorCost": 100
+  },
+  "difficultyRamp": {
+    "enabled": false,
+    "startFraction": 0.75,
+    "amount": 0.25
+  },
+  "geometry": {
+    "height": 0.55,
+    "width": 0.65,
+    "crossover": 0.60,
+    "centeredReachOnly": true,
+    "outerMiddleDownstrokeCost": 1.45,
+    "topDownstrokeCost": 2.4,
+    "quickHorizontalRiseCost": 2.2,
+    "compactPairedCells": true,
+    "pairSpacingCost": 4.5,
+    "oppositeInlineSeconds": 0.31,
+    "sameHandInlineSeconds": 0.11,
+    "topRowSpacingSeconds": 0.55,
+    "topPalmSpacingSeconds": 1.0,
+    "topDotSpacingSeconds": 0.9,
+    "crouchRecoverySeconds": 0.85,
+    "centerVisionWindowSeconds": 0.75,
+    "noteBombHeadClearanceMeters": 0.45,
+    "reachSlackMeters": 0.2,
+    "recoveryResetSeconds": 0.7,
+    "recoveryResetCost": 6.0,
+    "resetCueMinimumCrouchSeconds": 0.2
+  },
+  "status": "User Expert count envelope; other thresholds are provisional. No required deletion quota."
+}

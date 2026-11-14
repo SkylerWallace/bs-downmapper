@@ -1,0 +1,5 @@
+{
+  "name": "parity-runtime",
+  "private": true,
+  "dependencies": {"bsmap": "2.3.5"}
+}

@@ -1,0 +1,32 @@
+.tools/
+.venv/
+__pycache__/
+*.py[cod]
+node_modules/
+/dist/
+/plugins/chromapper/layouts/Library/
+/plugins/chromapper/layouts/Logs/
+/plugins/chromapper/layouts/Temp/
+/plugins/chromapper/layouts/UserSettings/
+/plugins/chromapper/layouts/Build/
+/maps/source/
+/maps/generated/
+/maps/reports/
+/maps/test-candidates.local.json
+/models/custom/
+*.dat
+*.egg
+*.ogg
+*.wav
+*.mp3
+*.zip
+engine-path.txt
+
+
+# Generated .NET and formatter output
+[Bb]in/
+[Oo]bj/
+.ruff_cache/
+
+# Local design exploration, not project documentation
+/docs/branding/

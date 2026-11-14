@@ -1,0 +1,57 @@
+{
+  "handAlternation": 0.5,
+  "parityAdherence": 0.42,
+  "name": "Normal authored-rhythm profile",
+  "minimumSourceNoteRatio": 0.4,
+  "maximumSourceNoteRatio": 0.5,
+  "nestedPulseRefinement": "Normal",
+  "maximumLinkedReach": 2.0,
+  "comfortableDoubles": true,
+  "doubleWindupClearanceWeight": 12,
+  "maximumSectionPruneFraction": 0.2,
+  "densityWindowBeats": 4,
+  "regularStreamMinimumNotes": 8,
+  "regularStreamMaximumGapBeats": 0.5,
+  "regularStreamRateReviewNps": 10,
+  "diagonalPreference": 4,
+  "preserveSourceResets": true,
+  "drumming": {
+    "minimumGapSeconds": 0.95,
+    "sparseMinimumGapSeconds": 0.88,
+    "downstrokePreference": 7.5
+  },
+  "beginnerDirections": {
+    "outwardPreference": 3.0,
+    "repeatedUpPenalty": 1.0
+  },
+  "difficultyRamp": {
+    "enabled": true,
+    "startFraction": 0.5,
+    "amount": 0.12
+  },
+  "geometry": {
+    "height": 0.2,
+    "centeredReachOnly": true,
+    "compactPairedCells": true,
+    "width": 0.7,
+    "sparseSectionAllowance": 0.22,
+    "sideWallRecoverySeconds": 0.45,
+    "ownSideOutward": true,
+    "bottomRowDownstrokes": true,
+    "oppositeInlineSeconds": 0.36,
+    "sameHandInlineSeconds": 0.16,
+    "crossover": 0.12,
+    "topRowSpacingSeconds": 0.55,
+    "topPalmSpacingSeconds": 1.0,
+    "topDotSpacingSeconds": 0.9,
+    "crouchRecoverySeconds": 0.85,
+    "centerVisionWindowSeconds": 0.75,
+    "noteBombHeadClearanceMeters": 0.45,
+    "reachSlackMeters": 0.2,
+    "recoveryResetSeconds": 0.7,
+    "recoveryResetEnabled": false,
+    "recoveryResetCost": 6.0,
+    "resetCueMinimumCrouchSeconds": 0.2
+  },
+  "status": "Provisional geometry settings. The supplied rhythm determines the note count."
+}
