@@ -6,11 +6,21 @@ param(
     [Parameter(Mandatory)][string]$QuickJsExe,
     [Parameter(Mandatory)][string]$QuickJsLicense,
     [Parameter(Mandatory)][string]$Esbuild,
-    [string]$LayoutBundle = (Join-Path $PSScriptRoot 'layouts/Build/bsdownmap-layouts'),
-    [string]$Output = (Join-Path $PSScriptRoot '../../dist/BsDownmapper.ChroMapper.dll')
+    [string]$LayoutBundle,
+    [string]$Output,
+    [ValidateSet('win-x64','linux-x64')][string]$Platform = $(if ($IsLinux) { 'linux-x64' } else { 'win-x64' })
 )
 
 $ErrorActionPreference = 'Stop'
+$quickJsName = if ($Platform -eq 'linux-x64') { 'qjs' } else { 'qjs.exe' }
+if (-not $LayoutBundle) {
+    $layoutDirectory = if ($Platform -eq 'linux-x64') { 'Build/linux-x64' } else { 'Build' }
+    $LayoutBundle = Join-Path $PSScriptRoot "layouts/$layoutDirectory/bsdownmap-layouts"
+}
+if (-not $Output) {
+    $outputDirectory = if ($Platform -eq 'linux-x64') { 'dist/linux-x64' } else { 'dist' }
+    $Output = Join-Path $PSScriptRoot "../../$outputDirectory/BsDownmapper.ChroMapper.$Platform.dll"
+}
 $root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../..')).Path
 $managed = Join-Path (Resolve-Path -LiteralPath $ChroMapperPath).Path 'ChroMapper_Data/Managed'
 $dotnet = (Get-Command dotnet -ErrorAction Stop).Source
@@ -42,7 +52,7 @@ try {
     New-Item -ItemType Directory -Path $native,$quickJs -Force | Out-Null
     Copy-Item -LiteralPath $NativeRanker -Destination (Join-Path $native 'shared-percentage-v1-ranker.bdt')
     Copy-Item -LiteralPath $Decoder -Destination (Join-Path $native 'libsndfile_x64.bin')
-    Copy-Item -LiteralPath $QuickJsExe -Destination (Join-Path $quickJs 'qjs.exe')
+    Copy-Item -LiteralPath $QuickJsExe -Destination (Join-Path $quickJs $quickJsName)
     & $Esbuild (Join-Path $root 'tools/quickjs_dispatch.mjs') --bundle --platform=neutral --format=esm '--external:qjs:std' '--external:fs' --legal-comments=inline "--outfile=$quickJs/dispatch.mjs"
     if ($LASTEXITCODE -ne 0) { throw "QuickJS bundle creation failed with exit code $LASTEXITCODE." }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -97,6 +107,7 @@ try {
     }
     [ordered]@{
         version = $Version
+        platform = $Platform
         dotnetSdk = $sdkVersion
         esbuildVersion = (& $Esbuild --version | Out-String).Trim()
         sha256 = (Get-FileHash -LiteralPath $outputPath -Algorithm SHA256).Hash

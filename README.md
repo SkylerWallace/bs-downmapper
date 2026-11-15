@@ -1,8 +1,13 @@
 # <img src="plugins/chromapper/downmapper.svg" width="40" height="40" alt=""> BS Downmapper
 
-Generate lower Standard difficulties for Beat Saber from a saved chart. The Windows ChroMapper plugin lets you preview and edit the proposed rhythm before applying the pattern and flow pass. All timing models run locally.
+Generate lower Standard difficulties for Beat Saber from a saved chart. The ChroMapper plugin lets you preview and edit the proposed rhythm before applying the pattern and flow pass. All timing models run locally. See the [Linux x64 build instructions](plugins/chromapper/README.md#build-for-linux-x64) for native Linux ChroMapper.
 
-[![Download the latest ChroMapper plugin](https://img.shields.io/badge/Download-ChroMapper%20Plugin-0078D4?style=for-the-badge)](https://github.com/SkylerWallace/bs-downmapper/releases/latest/download/BsDownmapper.ChroMapper.dll)
+## Download
+
+[![Download for Windows x64](https://img.shields.io/badge/Download-Windows%20x64-0078D4?style=for-the-badge)](https://github.com/SkylerWallace/bs-downmapper/releases/latest/download/BsDownmapper.ChroMapper.win-x64.dll)
+[![Download for Linux x64](https://img.shields.io/badge/Download-Linux%20x64-E6A700?style=for-the-badge)](https://github.com/SkylerWallace/bs-downmapper/releases/latest/download/BsDownmapper.ChroMapper.linux-x64.dll)
+
+Close ChroMapper, remove any previous BS Downmapper DLL from its `Plugins` folder, and copy the DLL for your platform into that folder. Then restart ChroMapper.
 
 ## Screenshots
 

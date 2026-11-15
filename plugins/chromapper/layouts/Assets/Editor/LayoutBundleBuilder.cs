@@ -25,7 +25,12 @@ public static class LayoutBundleBuilder
     private static readonly string[][] FooterSlots = { new[] { "Generate", "Cancel" }, new[] { "Apply", "Cancel" } };
 
     [MenuItem("BS Downmapper/Build Layout Bundle")]
-    public static void Build()
+    public static void Build() => Build(BuildTarget.StandaloneWindows64, "Build");
+
+    [MenuItem("BS Downmapper/Build Linux x64 Layout Bundle")]
+    public static void BuildLinux() => Build(BuildTarget.StandaloneLinux64, "Build/linux-x64");
+
+    private static void Build(BuildTarget target, string outputDirectory)
     {
         for (int i = 0; i < Prefabs.Length; i++)
         {
@@ -35,12 +40,12 @@ public static class LayoutBundleBuilder
 
         var project = Path.GetDirectoryName(Application.dataPath);
         var output = Environment.GetEnvironmentVariable("BS_DOWNMAP_LAYOUT_OUTPUT");
-        if (string.IsNullOrEmpty(output)) output = Path.Combine(project, "Build");
+        if (string.IsNullOrEmpty(output)) output = Path.Combine(project, outputDirectory);
         Directory.CreateDirectory(output);
         var bundle = new AssetBundleBuild { assetBundleName = BundleName, assetNames = Prefabs };
         var manifest = BuildPipeline.BuildAssetBundles(output, new[] { bundle },
             BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.StrictMode,
-            BuildTarget.StandaloneWindows64);
+            target);
         if (manifest == null) throw new InvalidOperationException("Building the BS Downmapper layouts failed.");
         Debug.Log($"Built {Path.Combine(output, BundleName)}");
     }

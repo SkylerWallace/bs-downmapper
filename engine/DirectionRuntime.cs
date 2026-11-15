@@ -11,12 +11,15 @@ namespace BsDownmap.Engine
 {
     internal sealed class DirectionRuntime
     {
+        internal static string ExecutableName =>
+            Path.DirectorySeparatorChar == '\\' ? "qjs.exe" : "qjs";
+
         private readonly string executable;
         private readonly string dispatch;
 
         internal DirectionRuntime(string runtimeDirectory)
         {
-            executable = Path.GetFullPath(Path.Combine(runtimeDirectory, "qjs.exe"));
+            executable = Path.GetFullPath(Path.Combine(runtimeDirectory, ExecutableName));
             dispatch = Path.Combine(Path.GetDirectoryName(executable)!, "dispatch.mjs");
         }
 

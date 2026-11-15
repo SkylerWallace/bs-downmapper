@@ -22,13 +22,13 @@ When placement or direction search runs out of options, the plugin saves a draft
 
 ## Installation
 
-Requires ChroMapper on Windows.
+Use the Windows DLL with Windows ChroMapper. For native Linux x64 ChroMapper, build the platform-specific DLL below. Linux editor validation is pending.
 
-Close ChroMapper and move any previous BS Downmapper installation outside `Plugins`. Copy `BsDownmapper.ChroMapper.dll` directly into `Plugins`, then restart the editor. To keep custom API v2 models, copy their package folders into `Plugins/bs-downmap/models`.
+Close ChroMapper and move any previous BS Downmapper installation outside `Plugins`. Copy the DLL for your platform directly into `Plugins`, then restart the editor. To keep custom API v2 models, copy their package folders into `Plugins/bs-downmap/models`.
 
 The DLL uses ChroMapper's Unity runtime and embeds its built-in model, layouts, QuickJS and audio decoder. The plugin uses temporary runtime files during preview or generation and deletes them when the operation ends. Compatibility with a publicly downloadable ChroMapper build still needs release validation; see the [release checklist](../../docs/release-checklist.md).
 
-Release downloads include a readable `THIRD-PARTY-NOTICES.txt`. The DLL also includes third-party notices as `BsDownmap.Licenses.*` resources. The bundled decoder is [libsndfile 1.2.2](https://github.com/libsndfile/libsndfile/tree/1.2.2). To use another compatible Windows x64 libsndfile build, set `BS_DOWNMAP_AUDIO_DECODER` to its absolute path before launching ChroMapper.
+Release downloads include a readable `THIRD-PARTY-NOTICES.txt`. The DLL also includes third-party notices as `BsDownmap.Licenses.*` resources. The bundled decoder is [libsndfile 1.2.2](https://github.com/libsndfile/libsndfile/tree/1.2.2). To use another compatible libsndfile build for your platform, set `BS_DOWNMAP_AUDIO_DECODER` to its absolute path before launching ChroMapper.
 
 Generated difficulties use the [automatic jump policy](../../docs/pipeline.md#4-apply-jump-settings-validate-and-save).
 
@@ -44,3 +44,20 @@ Adjust each group's spacing and padding, reorder controls within the body or foo
 Preview labels and backgrounds show the layout in Unity. ChroMapper supplies the modal frame, fonts, and live controls at runtime. The plugin still draws the waveform and note markers inside the timeline slot.
 
 Save the prefabs, then choose **BS Downmapper → Build Layout Bundle**. Rebuild and replace the DLL with the new layout bundle embedded, then restart ChroMapper.
+
+## Build for Linux x64
+
+Use a glibc-based Linux x64 system, PowerShell 7, the .NET SDK, and the [development dependencies](../../docs/contributing.md#local-setup). Open the layout project in the Unity version used by your target ChroMapper build, with Linux Build Support installed, and choose **BS Downmapper → Build Linux x64 Layout Bundle**.
+
+Use a Linux x64 QuickJS-NG executable and a Linux x64 libsndfile shared library. If libsndfile has dynamic codec dependencies, install them on the target system. Put the libsndfile license in a file named `COPYING` beside the library. Use a native esbuild executable and the exported shared percentage ranker, as described in the [release build inputs](../../docs/contributing.md#package-for-github-releases).
+
+Run from the repository root, substituting your paths.
+
+```sh
+pwsh -File plugins/chromapper/build.ps1 -Platform linux-x64 -Version 0.1.0 \
+  -ChroMapperPath /path/to/chromapper -NativeRanker /path/to/shared-percentage-v1-ranker.bdt \
+  -Decoder /path/to/libsndfile.so.1 -QuickJsExe /path/to/qjs \
+  -QuickJsLicense /path/to/quickjs/LICENSE -Esbuild /path/to/esbuild
+```
+
+The default Linux output is `dist/linux-x64/BsDownmapper.ChroMapper.linux-x64.dll`. Install it in ChroMapper's `Plugins` folder.

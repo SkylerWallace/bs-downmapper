@@ -1196,7 +1196,7 @@ public sealed class DownmapPlugin
         jsonObject["engine"] = runtime.DirectoryPath;
         jsonObject["ranker"] = runtime.PathFor(".tools/native-engine/shared-percentage-v1-ranker.bdt");
         string environmentVariable = Environment.GetEnvironmentVariable("BS_DOWNMAP_AUDIO_DECODER");
-        jsonObject["decoder"] = (string.IsNullOrWhiteSpace(environmentVariable) ? runtime.PathFor(".tools/native-engine/libsndfile_x64.bin") : Path.GetFullPath(environmentVariable));
+        jsonObject["decoder"] = (string.IsNullOrWhiteSpace(environmentVariable) ? runtime.PathFor(BundledAssets.Decoder) : Path.GetFullPath(environmentVariable));
         if (!preview)
             return JsonSerializer.Serialize(await EditorGeneration.Run(jsonObject, progress).ConfigureAwait(false));
 

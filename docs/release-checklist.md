@@ -16,7 +16,7 @@ Copy this checklist into the release record and fill in the evidence. Unchecked 
 - [ ] Record QuickJS-NG, libsndfile, esbuild, .NET SDK and model versions/provenance; retain the generated input hashes in `release-manifest.json`.
 - [ ] Check the DLL assembly version matches the release and verify its SHA-256 against the manifest.
 - [ ] Review readable dependency notices and include any additional notices/source materials required by the exact binaries distributed.
-- [ ] Attach `BsDownmapper.ChroMapper.dll`, `LICENSE.txt`, `THIRD-PARTY-NOTICES.txt`, and `release-manifest.json` to the release.
+- [ ] Attach both platform DLLs to the same release and verify the README's latest-release download links after publishing.
 
 ## Clean installation and editor checks
 

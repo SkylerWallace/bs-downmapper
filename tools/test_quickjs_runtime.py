@@ -3,10 +3,10 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from downmap import QUICKJS, run_quickjs
+from downmap import QUICKJS_EXE, run_quickjs
 
 
-@unittest.skipUnless((QUICKJS / "qjs.exe").is_file(), "Requires the packaged QuickJS runner")
+@unittest.skipUnless(QUICKJS_EXE.is_file(), "Requires the packaged QuickJS runner")
 class QuickJsRuntimeTests(unittest.TestCase):
     def test_parity_accepts_and_flags_the_same_synthetic_swings(self):
         with tempfile.TemporaryDirectory(prefix="bs-downmap-方向-") as temporary:

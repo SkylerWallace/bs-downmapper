@@ -20,7 +20,10 @@ namespace BsDownmap.Engine
             library = NativeLibrary.Load(Path.GetFullPath(decoderPath));
             try
             {
-                open = Export<OpenFile>("sf_wchar_open");
+                if (Path.DirectorySeparatorChar == '\\')
+                    open = Export<OpenWideFile>("sf_wchar_open").Invoke;
+                else
+                    open = Export<OpenUtf8File>("sf_open").Invoke;
                 read = Export<ReadFrames>("sf_readf_float");
                 close = Export<CloseFile>("sf_close");
             }
@@ -157,8 +160,11 @@ namespace BsDownmap.Engine
             public int SampleRate, Channels, Format, Sections, Seekable;
         }
 
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
-        private delegate IntPtr OpenFile([MarshalAs(UnmanagedType.LPWStr)] string path, int mode, ref SoundInfo info);
+        private delegate IntPtr OpenFile(string path, int mode, ref SoundInfo info);
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate IntPtr OpenWideFile([MarshalAs(UnmanagedType.LPWStr)] string path, int mode, ref SoundInfo info);
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate IntPtr OpenUtf8File([MarshalAs(UnmanagedType.LPUTF8Str)] string path, int mode, ref SoundInfo info);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate long ReadFrames(IntPtr file, [Out] float[] samples, long count);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]

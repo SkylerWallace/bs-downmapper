@@ -2,6 +2,8 @@ using System;
 using System.IO;
 using System.IO.Compression;
 using System.Threading;
+using System.Runtime.InteropServices;
+using BsDownmap.Engine;
 
 namespace BsDownmap.ChroMapper
 {
@@ -9,10 +11,15 @@ namespace BsDownmap.ChroMapper
     {
         internal const string Ranker = ".tools/native-engine/shared-percentage-v1-ranker.bdt";
         internal const string Decoder = ".tools/native-engine/libsndfile_x64.bin";
+        private static readonly string QuickJs = ".tools/quickjs-runtime/" + DirectionRuntime.ExecutableName;
+
+        [DllImport("libc", SetLastError = true)]
+        private static extern int chmod(string path, uint mode);
+
         private static readonly string[] Profiles = { "expert.json", "hard.json", "normal.json", "easy.json" };
         private static readonly string[] RuntimeFiles =
         {
-            Ranker, Decoder, ".tools/quickjs-runtime/qjs.exe", ".tools/quickjs-runtime/dispatch.mjs",
+            Ranker, Decoder, QuickJs, ".tools/quickjs-runtime/dispatch.mjs",
         };
 
         private static Stream Open(string name) =>
@@ -45,6 +52,9 @@ namespace BsDownmap.ChroMapper
                         throw new InvalidDataException($"Missing runtime file {name}.")).Open();
                     lease.Write(name, source);
                 }
+                if (Path.DirectorySeparatorChar == '/' && chmod(lease.PathFor(QuickJs), 0x1C0) != 0) // 0700
+                    throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Could not make QuickJS executable.");
+
                 foreach (string profile in Profiles)
                 {
                     using var source = Open(profile);

@@ -2,7 +2,7 @@
 
 ## Local setup
 
-Use Python 3.12 and Node.js with npm. A .NET SDK and a ChroMapper installation are required to build the Windows plugin. Run these setup commands from the project root.
+Use Python 3.12 and Node.js with npm. A .NET SDK and a ChroMapper installation are required to build the plugin. Run these setup commands from the project root.
 
 ```powershell
 py -3.12 -m venv .tools/onset-env
@@ -12,6 +12,21 @@ Copy-Item tools/parity-package.json .tools/parity-runtime/package.json
 Copy-Item tools/parity-package-lock.json .tools/parity-runtime/package-lock.json
 npm ci --prefix .tools/parity-runtime
 ```
+
+On Linux, run the equivalent setup and checks from the project root.
+
+```sh
+python3.12 -m venv .tools/onset-env
+.tools/onset-env/bin/python -m pip install -r requirements.txt
+mkdir -p .tools/parity-runtime
+cp tools/parity-package.json .tools/parity-runtime/package.json
+cp tools/parity-package-lock.json .tools/parity-runtime/package-lock.json
+npm ci --prefix .tools/parity-runtime
+.tools/onset-env/bin/python -m unittest discover -s tools -p 'test_*.py'
+for test in tools/test_*.cjs; do node "$test" || exit 1; done
+```
+
+To exercise the optional QuickJS CLI path on Linux, place an executable Linux x64 QuickJS-NG binary at `.tools/quickjs-runtime/qjs` with the bundled `dispatch.mjs` beside it.
 
 ## Test a change
 
@@ -68,8 +83,8 @@ Build the Windows layout bundle from the [plugin's Unity project](../plugins/chr
 - `-QuickJsExe` and `-QuickJsLicense` point to the Windows x64 QuickJS-NG executable and license.
 - `-Esbuild` points to esbuild or its Windows npm shim.
 - `-LayoutBundle` selects a Windows layout bundle built with the target editor's Unity version. For Stable 0.13.892, build it with Unity 2021.3.45f1. Use a copy of the layout project with uGUI 1.0.0 and regenerate its package lock.
-- `-Output` overrides the default `dist/BsDownmapper.ChroMapper.dll` output.
+- `-Output` overrides the default Windows output `dist/BsDownmapper.ChroMapper.win-x64.dll`.
 
-The build compiles the engine and plugin against ChroMapper's managed assemblies. Test the DLL by itself in the editor's Plugins folder before publishing. Attach `BsDownmapper.ChroMapper.dll` to the GitHub release. The standalone host, Python, and Node remain available for development and benchmark workflows. [Custom model package format](custom-models.md)
+Run the script once with `-Platform win-x64` and once with `-Platform linux-x64`, using the same `-Version` and the matching ChroMapper assemblies and runtime assets per platform. See the [Linux build inputs](../plugins/chromapper/README.md#build-for-linux-x64).
 
-The build also writes `LICENSE.txt`, `THIRD-PARTY-NOTICES.txt`, and `release-manifest.json` beside the DLL. Attach all three alongside the DLL. The manifest records the DLL hash, build tool versions, and input hashes without local paths. Complete the [release checklist](release-checklist.md) before publishing.
+Attach `BsDownmapper.ChroMapper.win-x64.dll` and `BsDownmapper.ChroMapper.linux-x64.dll` directly to the same GitHub release. Keep these filenames for the README's latest-release links. Each build also writes `LICENSE.txt`, `THIRD-PARTY-NOTICES.txt`, and `release-manifest.json` beside the DLL. The manifest records the DLL hash, build tool versions, and input hashes without local paths. Complete the [release checklist](release-checklist.md) before publishing.

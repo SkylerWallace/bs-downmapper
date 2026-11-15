@@ -1014,12 +1014,13 @@ def geometry(ns, level, sections, profile):
 
 TOOLS = Path(__file__).resolve().parent
 QUICKJS = TOOLS.parent / ".tools" / "quickjs-runtime"
+QUICKJS_EXE = QUICKJS / ("qjs.exe" if sys.platform == "win32" else "qjs")
 
 
 def run_quickjs(task, data, output):
     # Keep Windows paths in Python. The QuickJS CLI uses the system code page for argv.
     process = subprocess.run(
-        [str(QUICKJS / "qjs.exe"), "dispatch.mjs", task],
+        [str(QUICKJS_EXE), "dispatch.mjs", task],
         cwd=QUICKJS, input=data, capture_output=True, encoding="utf-8", errors="replace",
     )
     if process.returncode == 0:
@@ -1029,7 +1030,7 @@ def run_quickjs(task, data, output):
 
 def run_direction_search(run):
     source, output = run / "direction-input.json", run / "direction-search.json"
-    if (QUICKJS / "qjs.exe").is_file():
+    if QUICKJS_EXE.is_file():
         return run_quickjs("plan_directions", source.read_text(encoding="utf-8"), output)
     return subprocess.run(
         ["node", str(TOOLS / "plan_directions.cjs"), str(source), str(output)],
@@ -1344,7 +1345,7 @@ def check_parity(run, name, path, level, reentries=()):
     if cues:
         config = run / (name + "-parity-reentries.json")
         write(config, cues)
-    if (QUICKJS / "qjs.exe").is_file():
+    if QUICKJS_EXE.is_file():
         process = run_quickjs("check_parity", json.dumps({
             "chart": load(path), "bpm": level["bpm"], "reentries": cues,
         }), output)
