@@ -13,93 +13,6 @@ using UnityEngine.UI;
 
 namespace BsDownmap.ChroMapper
 {
-    public abstract class DownmapWindow : MonoBehaviour
-    {
-        protected const float ControlHeight = 26;
-        private Type[] disabled;
-        private GUISkin skin;
-        private GUIStyle panel, heading;
-        private bool laidOut;
-        protected abstract string Title { get; }
-        protected abstract float Height { get; }
-        protected virtual float Width => 960;
-        protected abstract void Draw();
-
-        protected virtual void Awake()
-        {
-            disabled = typeof(CMInput).GetNestedTypes().Where(t => t.IsInterface).ToArray();
-            CMInputCallbackInstaller.DisableActionMaps(GetType(), disabled);
-        }
-
-        protected virtual void OnDestroy()
-        {
-            CMInputCallbackInstaller.ClearDisabledActionMaps(GetType(), disabled);
-            if (skin != null) Destroy(skin);
-        }
-
-        private void OnGUI()
-        {
-            if (Event.current.type == EventType.Layout) laidOut = true;
-            if (!laidOut) return;
-            if (skin == null)
-            {
-                skin = Instantiate(GUI.skin);
-                foreach (var style in new[] { skin.label, skin.button, skin.toggle, skin.textField })
-                {
-                    style.fontSize = 15;
-                    style.normal.textColor = new Color(.94f, .96f, 1f);
-                }
-                skin.button.fixedHeight = ControlHeight;
-                panel = new GUIStyle { padding = new RectOffset(20, 20, 14, 14) };
-                heading = new GUIStyle(skin.label) { fontSize = 23, fontStyle = FontStyle.Bold };
-            }
-
-            var previousSkin = GUI.skin;
-            var previousDepth = GUI.depth;
-            try
-            {
-                GUI.skin = skin;
-                GUI.depth = -100;
-                var width = Mathf.Min(Width, Screen.width - 32);
-                var height = Mathf.Min(Height, Screen.height - 24);
-                var bounds = new Rect((Screen.width - width) / 2, (Screen.height - height) / 2, width, height);
-                if (Event.current.type == EventType.Repaint)
-                    Paint(new Rect(0, 0, Screen.width, Screen.height), new Color(0, 0, 0, .68f));
-                GUI.ModalWindow(GetInstanceID(), bounds, _ =>
-                {
-                    if (Event.current.type == EventType.Repaint)
-                    {
-                        Paint(new Rect(0, 0, width, height), new Color(.09f, .11f, .15f));
-                        Paint(new Rect(0, 0, width, 3), new Color(.32f, .77f, .87f));
-                    }
-                    GUILayout.Label(Title, heading);
-                    Draw();
-                }, GUIContent.none, panel);
-            }
-            finally
-            {
-                GUI.depth = previousDepth;
-                GUI.skin = previousSkin;
-            }
-        }
-
-        protected static void Paint(Rect rect, Color color)
-        {
-            var previous = GUI.color;
-            GUI.color = color;
-            GUI.DrawTexture(rect, Texture2D.whiteTexture);
-            GUI.color = previous;
-        }
-
-        protected void Close(Action callback)
-        {
-            gameObject.SetActive(false);
-            CMInputCallbackInstaller.ClearDisabledActionMaps(GetType(), disabled);
-            Destroy(gameObject);
-            callback();
-        }
-    }
-
     public sealed class TimingData
     {
         public double endBeat;
@@ -804,36 +717,37 @@ namespace BsDownmap.ChroMapper
 
     }
 
-    public sealed class GenerationWindow : DownmapWindow
+    internal sealed class GenerationWindow
     {
-        private string message;
+        private readonly DialogBox dialog;
+        private readonly ProgressBarComponent bar;
+        private string stage;
         private float fraction;
-        protected override string Title => "BS Downmapper";
-        protected override float Height => 120;
 
-        public static GenerationWindow Show(string message)
+        private GenerationWindow(string message)
         {
-            var window = new GameObject("BS Downmapper Generation").AddComponent<GenerationWindow>();
-            window.message = message;
-            return window;
+            dialog = PersistentUI.Instance.CreateNewDialogBox().WithNoTitle();
+            stage = message;
+            bar = dialog.AddComponent<ProgressBarComponent>()
+                .WithCustomLabelFormatter(value => $"{stage} ({Mathf.RoundToInt(value * 100)}%)");
+            bar.UpdateProgressBar(0f);
+            dialog.Open();
         }
 
-        public void SetProgress(float value, string stage)
+        public static GenerationWindow Show(string message) => new GenerationWindow(message);
+
+        public void SetProgress(float value, string message)
         {
+            if (bar == null) return;
+            stage = message;
             fraction = Mathf.Max(fraction, Mathf.Clamp01(value));
-            message = stage;
+            bar.UpdateProgressBar(fraction);
         }
 
-        protected override void Draw()
+        public void Finish()
         {
-            GUILayout.Label($"{message}  ({Mathf.RoundToInt(fraction * 100)}%)");
-            var track = GUILayoutUtility.GetRect(80, 6, GUILayout.ExpandWidth(true));
-            if (Event.current.type != EventType.Repaint) return;
-            Paint(track, new Color(.16f, .21f, .27f));
-            Paint(new Rect(track.x, track.y, track.width * fraction, track.height),
-                new Color(.32f, .77f, .87f));
+            if (dialog != null) dialog.Close();
         }
-        public void Finish() => Close(() => { });
     }
 
     internal sealed class SettingHint : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
