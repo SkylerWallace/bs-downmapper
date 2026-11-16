@@ -11,7 +11,8 @@ namespace BsDownmap.ChroMapper
     {
         internal const string Ranker = ".tools/native-engine/shared-percentage-v1-ranker.bdt";
         internal const string Decoder = ".tools/native-engine/libsndfile_x64.bin";
-        private static readonly string QuickJs = ".tools/quickjs-runtime/" + DirectionRuntime.ExecutableName;
+        private const string QuickJsDirectory = ".tools/quickjs-runtime/";
+        private static readonly string QuickJs = QuickJsDirectory + DirectionRuntime.ExecutableName;
 
         [DllImport("libc", SetLastError = true)]
         private static extern int chmod(string path, uint mode);
@@ -46,6 +47,17 @@ namespace BsDownmap.ChroMapper
             try
             {
                 using var archive = new ZipArchive(Open("runtime.zip"), ZipArchiveMode.Read);
+                if (archive.GetEntry(QuickJs) == null)
+                {
+                    bool windows = DirectionRuntime.ExecutableName == "qjs.exe";
+                    string otherExecutable = windows ? "qjs" : "qjs.exe";
+                    if (archive.GetEntry(QuickJsDirectory + otherExecutable) != null)
+                    {
+                        string platform = windows ? "win-x64" : "linux-x64";
+                        throw new InvalidDataException(
+                            $"Wrong BS Downmapper build for this platform. Replace it with BsDownmapper.ChroMapper.{platform}.dll.");
+                    }
+                }
                 foreach (string name in RuntimeFiles)
                 {
                     using var source = (archive.GetEntry(name) ??
