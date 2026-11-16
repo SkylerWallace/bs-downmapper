@@ -159,7 +159,17 @@ internal static class EditorGeneration
             var (speed, offset, halfJump) = JumpSettings(originalSong, prepared.Level.Bpm, target.Difficulty, jump);
             (IReadOnlyList<Note> Notes, ISet<ChartLinkId> Released) generated;
             PlacementDraft draft = null;
+            bool benchmarkParity = Environment.GetEnvironmentVariable("BS_DOWNMAP_BENCHMARK_PARITY") == "1";
+            var parityAudits = new System.Runtime.CompilerServices.ConditionalWeakTable<IReadOnlyList<Note>, JsonObject>();
+            void RecordAudit(IReadOnlyList<Note> notes, JsonObject audit)
+            {
+                parityAudits.Remove(notes);
+                parityAudits.Add(notes, audit);
+            }
             bool fullyPlaced = false;
+            PlacementDeadEnd lastBlocker = null;
+            bool tryHandsEarly = request["placement-hand-fallback"]?.GetValue<bool>() == true &&
+                mode == "best-guess" && entry["edits"] == null && entry["patternModel"] == null;
             double adherence = StandardSong.Number(profile["parityAdherence"]);
             if (!double.IsFinite(adherence))
                 adherence = 1;
@@ -189,7 +199,13 @@ internal static class EditorGeneration
                 generated = await NativeChartGenerator.Generate(prepared, pattern, seeds, profile, speed,
                     halfJump * 60 / prepared.Level.Bpm, runtime, repairBudget.Token,
                     () => { if (!fullyPlaced) Report(.70f, "Checking placements and parity"); },
-                    RecordDraft, foundation, defaultAdherence);
+                    RecordDraft, foundation, defaultAdherence,
+                    blocked: failure =>
+                    {
+                        if (lastBlocker == null || lastBlocker.Reason == "No geometric direction domain" ||
+                            failure.Reason == "No joint geometry")
+                            lastBlocker = failure;
+                    }, tryHandsEarly: tryHandsEarly, audited: RecordAudit);
             }
             catch (Exception error) when (error is PlacementDeadEnd or DirectionPathFailure ||
                 error is OperationCanceledException && draft != null && repairBudget.IsCancellationRequested && !token.IsCancellationRequested)
@@ -210,12 +226,209 @@ internal static class EditorGeneration
                 warnings.Add(new DraftWarning(target.Difficulty, failure,
                     (error as PlacementDeadEnd)?.Beat, !fullyPlaced, findings));
                 generated = (draft.Notes, draft.Released);
+                var blocker = error as PlacementDeadEnd ?? lastBlocker;
+                if (error is DirectionPathFailure)
+                {
+                    var match = System.Text.RegularExpressions.Regex.Match(error.Message, @"at beat (\S+) \((left|right) hand\)");
+                    if (match.Success && double.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out double blockedBeat))
+                    {
+                        int hand = match.Groups[2].Value == "left" ? 0 : 1;
+                        var blocked = seeds.Where(note => note.Hand == hand && Math.Abs(note.Beat - blockedBeat) <= .0001).ToArray();
+                        if (blocked.Length > 0)
+                            blocker = new PlacementDeadEnd(blockedBeat, blocked, "No supported direction path");
+                    }
+                }
+                if (request["placement-hand-fallback"]?.GetValue<bool>() == true &&
+                    !fullyPlaced && blocker != null && mode == "best-guess" && entry["edits"] == null &&
+                    entry["patternModel"] == null && !blocker.Reason.StartsWith("Unexpected parity ", StringComparison.Ordinal))
+                {
+                    var protectedIds = prepared.Context.ProtectedIds.Concat(pattern.Anchors).ToHashSet();
+                    var resetIds = MappingIntent.Detect(seeds, prepared.Level.Gameplay.Bombs,
+                        prepared.Level.Clock, pattern.Anchors).ResetNotes();
+                    resetIds.UnionWith(prepared.ResetIds);
+                    protectedIds.UnionWith(resetIds);
+                    using var fallback = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    fallback.CancelAfter(TimeSpan.FromSeconds(360));
+                    var beats = NestedTimings.DistinctBeats(approved);
+                    var handOptions = ParityRhythmOptions.Around(prepared, seeds, blocker.Beat, blocker.Notes[0].Hand,
+                        protectedIds, resetIds, splitStacks: true)
+                        .Where(option => NestedTimings.DistinctBeats(option.Notes).SequenceEqual(beats))
+                        .GroupBy(option => option.EditCount)
+                        .SelectMany(group => group.OrderBy(option => option.Cost).Take(4));
+                    var sourceGroups = NestedTimings.Group(prepared.Context.Notes);
+                    var links = TimelineRepeats.Find(prepared.Level, prepared.Context.Notes).Sections
+                        .SelectMany(section => section.Links)
+                        .Select(link => link.Select(index => sourceGroups[index].Beat).ToArray()).ToArray();
+                    IEnumerable<ParityRhythmOptions.Option> RemoveWindow(IReadOnlyList<Note> rhythm, double failureBeat)
+                    {
+                        var groups = NestedTimings.Group(rhythm);
+                        var attack = groups.Where(group => group.Beat <= failureBeat + .00001)
+                            .TakeLast(3).ToArray();
+                        return Enumerable.Range(1, attack.Length).Select(width =>
+                        {
+                            var removed = attack.TakeLast(width).Select(group => group.Beat).ToHashSet();
+                            int count;
+                            do
+                            {
+                                count = removed.Count;
+                                foreach (var link in links)
+                                    if (link.Any(removed.Contains))
+                                        removed.UnionWith(link);
+                            } while (count != removed.Count);
+                            return removed;
+                        }).Where(removed =>
+                            !groups.Any(group => removed.Contains(group.Beat) &&
+                                group.Notes.Any(note => protectedIds.Contains(note.Id) ||
+                                    prepared.Links.LockedAnchors.Contains(note.Id))) &&
+                            !saved.Where(pair => TimingPreparation.Standard.SkipWhile(rank => rank != target.Difficulty)
+                                .Skip(1).Contains(pair.Key)).SelectMany(pair => pair.Value)
+                                .Any(beat => NestedTimings.Nearest(beat, removed.OrderBy(value => value).ToArray()) >= 0))
+                            .Select(removed => new ParityRhythmOptions.Option(
+                                groups.Where(group => !removed.Contains(group.Beat))
+                                    .SelectMany(group => group.Notes).ToArray(), removed.Count, removed.Count));
+                    }
+                    var compound = error is DirectionPathFailure
+                        ? ParityRhythmOptions.CompoundDirectionRepair(prepared.Level, seeds, blocker.Beat,
+                            blocker.Notes[0].Hand, protectedIds).OrderBy(option => option.Cost).Take(12).ToArray()
+                        : Array.Empty<ParityRhythmOptions.Option>();
+                    var options = new LinkedList<ParityRhythmOptions.Option>(compound.Concat(handOptions)
+                        .Concat(RemoveWindow(approved, blocker.Beat)));
+                    var visited = new HashSet<string>();
+                    var triedParityWindows = new HashSet<string>();
+                    var triedGeometryWindows = new HashSet<(double Beat, int Hand, int BeatCount)>();
+                    var pruningSteps = new Dictionary<ParityRhythmOptions.Option, int>();
+                    var localTargets = new Dictionary<ParityRhythmOptions.Option, (double Beat, int Hand)>();
+                    var boundaryPlacements = new Dictionary<ParityRhythmOptions.Option, PlacementDraft>();
+                    try
+                    {
+                        for (int attempt = 0; options.Count > 0 && attempt < 180; attempt++)
+                        {
+                            fallback.Token.ThrowIfCancellationRequested();
+                            var option = options.First.Value;
+                            options.RemoveFirst();
+                            if (!visited.Add(string.Join(",", option.Notes.Select(note => $"{note.Id}/{note.Hand}")))) continue;
+                            bool traceCompound = benchmarkParity && compound.Contains(option);
+                            var revised = PatternPreparation.Prepare(foundation, prepared, option.Notes);
+                            var trialSeeds = revised.Seeds.Select(seed => seed.Note).ToArray();
+                            if (traceCompound)
+                            {
+                                var original = seeds.ToDictionary(note => note.Id);
+                                var editedBeats = option.Notes.Where(note =>
+                                    !original.TryGetValue(note.Id, out var before) || before != note)
+                                    .Select(note => note.Beat).ToHashSet();
+                                var planned = trialSeeds.Where(note => editedBeats.Contains(note.Beat));
+                                Console.Error.WriteLine($"Compound near {blocker.Beat:R}: " +
+                                    string.Join("; ", planned.Select(note => FormattableString.Invariant(
+                                        $"{note.Beat:R} hand={note.Hand} cell=({note.X},{note.Y}) cut={note.Direction} angle={note.Angle}"))));
+                            }
+                            HashSet<int> fixedOutside = null;
+                            if (boundaryPlacements.Remove(option, out var boundary))
+                            {
+                                var prior = boundary.Notes.ToDictionary(note => note.Id);
+                                var attacks = NestedTimings.Group(boundary.Notes);
+                                double beat = localTargets[option].Beat;
+                                double first = attacks.Where(group => group.Beat < beat).TakeLast(4)
+                                    .Select(group => group.Beat).DefaultIfEmpty(beat).First();
+                                double last = attacks.Where(group => group.Beat > beat).Take(4)
+                                    .Select(group => group.Beat).DefaultIfEmpty(beat).Last();
+                                var clock = prepared.Level.Clock;
+                                fixedOutside = trialSeeds.Where(note => prior.ContainsKey(note.Id) && !revised.Anchors.Contains(note.Id) &&
+                                    (clock.Gap(note.Beat, first) > .75 || clock.Gap(last, note.Beat) > .75))
+                                    .Select(note => note.Id).ToHashSet();
+                                trialSeeds = trialSeeds.Select(note => fixedOutside.Contains(note.Id) ? prior[note.Id] : note).ToArray();
+                            }
+                            PlacementDraft validated = null;
+                            bool sawDraft = false;
+                            using var trial = CancellationTokenSource.CreateLinkedTokenSource(fallback.Token);
+                            trial.CancelAfter(TimeSpan.FromSeconds(9));
+                            try
+                            {
+                                var result = await NativeChartGenerator.Generate(prepared, revised,
+                                    trialSeeds, profile, speed,
+                                    halfJump * 60 / prepared.Level.Bpm, runtime, trial.Token, foundation: foundation,
+                                    defaultAdherence: defaultAdherence, tryHandsEarly: true, fixedOutsideWindow: fixedOutside,
+                                    draft: candidate =>
+                                    {
+                                        if (sawDraft)
+                                            validated = candidate;
+                                        sawDraft = true;
+                                    }, audited: RecordAudit);
+                                prepared.Level.Gameplay.WriteWithLinks(result.Notes, prepared.Links.Optional, result.Released);
+                                generated = result;
+                                approved = option.Notes;
+                                warnings.RemoveAt(warnings.Count - 1);
+                                if (Environment.GetEnvironmentVariable("BS_DOWNMAP_TRACE_DOMAINS") == "1")
+                                    Console.Error.WriteLine($"Accepted attack repair: {pruningSteps.GetValueOrDefault(option)} parity pruning steps.");
+                                if (Environment.GetEnvironmentVariable("BS_DOWNMAP_BENCHMARK_PARITY") == "1")
+                                    Console.Error.WriteLine($"Parity timing fallback [{target.Difficulty}]: {pruningSteps.GetValueOrDefault(option)}");
+                                break;
+                            }
+                            catch (Exception rejected) when (rejected is PlacementDeadEnd or DirectionPathFailure ||
+                                rejected is OperationCanceledException && trial.IsCancellationRequested && !token.IsCancellationRequested)
+                            {
+                                if (traceCompound)
+                                    Console.Error.WriteLine($"Compound rejected: {rejected.GetType().Name}: {rejected.Message}");
+                                if (Environment.GetEnvironmentVariable("BS_DOWNMAP_TRACE_DOMAINS") == "1")
+                                    Console.Error.WriteLine($"Attack repair near beat {blocker.Beat:R} ({option.Notes.Count} notes): {rejected.Message}");
+                                if (rejected is PlacementDeadEnd next)
+                                {
+                                    bool parity = next.Reason.StartsWith("Unexpected parity ", StringComparison.Ordinal);
+                                    if (parity && localTargets.TryGetValue(option, out var targetFinding) &&
+                                        targetFinding == (next.Beat, next.Notes[0].Hand))
+                                        continue;
+                                    int count = pruningSteps.GetValueOrDefault(option);
+                                    foreach (var candidate in RemoveWindow(option.Notes, next.Beat).Take(1))
+                                    {
+                                        pruningSteps[candidate] = count + (parity ? 1 : 0);
+                                        options.AddFirst(candidate);
+                                    }
+                                    var distinct = NestedTimings.DistinctBeats(option.Notes);
+                                    if (next.Reason == "No joint geometry" &&
+                                        triedGeometryWindows.Add((next.Beat, next.Notes[0].Hand, distinct.Length)))
+                                    {
+                                        var geometryOptions = ParityRhythmOptions.Around(prepared, trialSeeds, next.Beat,
+                                                next.Notes[0].Hand, protectedIds, resetIds, splitStacks: true)
+                                            .Where(candidate => NestedTimings.DistinctBeats(candidate.Notes).SequenceEqual(distinct))
+                                            .OrderBy(candidate => candidate.Cost).Take(4).Reverse();
+                                        foreach (var candidate in geometryOptions)
+                                        {
+                                            pruningSteps[candidate] = count;
+                                            options.AddFirst(candidate);
+                                        }
+                                    }
+                                    string windowKey = next.Beat.ToString("R", System.Globalization.CultureInfo.InvariantCulture) +
+                                        "/" + next.Notes[0].Hand + "/" + distinct.Length;
+                                    if (parity && triedParityWindows.Add(windowKey))
+                                    {
+                                        var local = ParityRhythmOptions.Around(prepared, option.Notes, next.Beat,
+                                                next.Notes[0].Hand, protectedIds, resetIds)
+                                            .Where(candidate => NestedTimings.DistinctBeats(candidate.Notes).SequenceEqual(distinct))
+                                            .OrderBy(candidate => candidate.Cost).Take(3).Reverse();
+                                        foreach (var candidate in local)
+                                        {
+                                            pruningSteps[candidate] = count;
+                                            localTargets[candidate] = (next.Beat, next.Notes[0].Hand);
+                                            if (validated != null)
+                                                boundaryPlacements[candidate] = validated;
+                                            options.AddFirst(candidate);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    catch (OperationCanceledException) when (fallback.IsCancellationRequested && !token.IsCancellationRequested)
+                    {
+                        // Retain the original draft when no candidate finishes.
+                    }
+                }
             }
             if (fullyPlaced && draft != null && warnings.LastOrDefault()?.Difficulty == target.Difficulty &&
                 mode == "best-guess" && entry["edits"] == null &&
                 entry["patternModel"] == null &&
                 (entry["model"]?.GetValue<string>() ?? "nested-priority-v1") == "nested-priority-v1" &&
-                adherence >= .95)
+                adherence > .5)
             {
                 var level = prepared.Level;
                 var clock = level.Clock;
@@ -237,95 +450,218 @@ internal static class EditorGeneration
                     protectedIds.UnionWith(best.Notes.Where(note => note.Hand == finding.Hand && note.Beat <= finding.Beat)
                         .GroupBy(note => note.Beat).OrderByDescending(group => group.Key).Take(2)
                         .SelectMany(group => group.Select(note => note.Id)));
-                using var searchBudget = CancellationTokenSource.CreateLinkedTokenSource(token);
-                searchBudget.CancelAfter(TimeSpan.FromSeconds(28));
-                var searchToken = searchBudget.Token;
+                double searchSeconds = 28 * Math.Clamp((adherence - .5) / .45, 0, 1);
                 var baselineById = approved.ToDictionary(note => note.Id);
                 var reasons = new Dictionary<(double Beat, int Hand), string>();
-                try
+                var directionBlockers = new HashSet<(double Beat, int Hand)>();
+                var authoredDoubles = NestedTimings.Group(foundation.Gameplay.Notes)
+                    .Where(attack => attack.Notes.Select(note => note.Hand).Distinct().Count() == 2)
+                    .Select(attack => attack.Beat).ToHashSet();
+                await Search(2, previous.Except(inherited), searchSeconds, quick: true);
+                await Search(4, previous.Except(inherited).OrderBy(item => item.Beat).ThenBy(item => item.Hand), searchSeconds);
+                int beforeBlockerSearch = previous.Count;
+                await Search(8, directionBlockers.Where(previous.Contains).OrderBy(item => item.Beat)
+                    .ThenBy(item => item.Hand), searchSeconds);
+                if (previous.Count < beforeBlockerSearch)
                 {
-                    foreach (var finding in previous.Except(inherited).OrderBy(item => item.Beat).ThenBy(item => item.Hand).Take(16).ToArray())
+                    await Search(2, previous.Except(inherited), searchSeconds, quick: true);
+                    await Search(4, previous.Except(inherited).OrderBy(item => item.Beat).ThenBy(item => item.Hand),
+                        searchSeconds, reusePlacement: true);
+                }
+                var remainingQuickTargets = previous.Except(inherited).ToArray();
+                if (remainingQuickTargets.Length is > 0 and <= 6)
+                    await Search(2, remainingQuickTargets, searchSeconds, quick: true);
+
+                async Task Search(int radius, IEnumerable<(double Beat, int Hand)> targets, double seconds,
+                    bool reusePlacement = false, bool quick = false)
+                {
+                    using var searchBudget = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    searchBudget.CancelAfter(TimeSpan.FromSeconds(seconds));
+                    var searchToken = searchBudget.Token;
+                    try
                     {
-                        if (!previous.Contains(finding))
-                            continue;
-                        var options = new List<(ParityRhythmOptions.Option Option, int Errors)>();
-                        reasons[finding] = "Search interrupted";
-                        int screened = 0;
-                        foreach (var option in ParityRhythmOptions.Around(prepared, best.Notes, finding.Beat, finding.Hand, protectedIds, resetIds)
-                            .GroupBy(option => option.EditCount).SelectMany(group =>
-                                group.OrderBy(option => option.Cost).Take(group.Key == 1 ? 20 : 18)))
+                        foreach (var finding in targets.OrderBy(item => item.Beat).ThenBy(item => item.Hand)
+                            .Take(quick ? int.MaxValue : radius == 4 ? 16 : 3).ToArray())
                         {
-                            screened++;
-                            var findings = Errors(await Audit(option.Notes, level.Gameplay.Bombs, searchToken));
-                            if (!findings.Contains(finding) && findings.IsSubsetOf(previous) &&
-                                previous.Where(inherited.Contains).All(findings.Contains))
-                                options.Add((option, findings.Count));
-                        }
-                        reasons[finding] = screened == 0 ? "No eligible local edits" :
-                            options.Count == 0 ? "No candidate improved parity while preserving inherited findings" :
-                            "Placement search interrupted";
-                        foreach (var (option, _) in options.OrderBy(item => item.Errors).ThenBy(item => item.Option.Cost).Take(3))
-                        {
-                            var rhythm = option.Notes.Select(note => baselineById.GetValueOrDefault(note.Id, note)).ToArray();
-                            var optionPattern = PatternPreparation.Prepare(foundation, prepared, rhythm);
-                            var settled = option.Notes.ToDictionary(note => note.Id);
-                            var trialSeeds = optionPattern.Seeds.Select(seed => optionPattern.Anchors.Contains(seed.Note.Id)
-                                ? seed.Note : settled[seed.Note.Id]).ToArray();
-                            PlacementDraft placed = null;
-                            bool sawSeeds = false;
-                            try
+                            if (!previous.Contains(finding))
+                                continue;
+                            bool wide = radius > 4;
+                            var options = new List<(ParityRhythmOptions.Option Option, int Errors)>();
+                            var setupDoubles = new HashSet<ParityRhythmOptions.Option>();
+                            var existingIds = best.Notes.Select(note => note.Id).ToHashSet();
+                            if (wide)
+                                options.Add((new ParityRhythmOptions.Option(best.Notes, 0, 0), previous.Count));
+                            var previousRaw = Errors(best.Audit, includeDrumming: true);
+                            reasons[finding] = "Search interrupted";
+                            int screened = 0;
+                            var attacks = NestedTimings.Group(best.Notes);
+                            double first = attacks.Where(attack => attack.Beat < finding.Beat).TakeLast(radius)
+                                .Select(attack => attack.Beat).DefaultIfEmpty(finding.Beat).First();
+                            double last = attacks.Where(attack => attack.Beat > finding.Beat).Take(radius)
+                                .Select(attack => attack.Beat).DefaultIfEmpty(finding.Beat).Last();
+                            var candidates = quick
+                                ? ParityRhythmOptions.PrecedingAttackEdits(best.Notes, finding.Beat, finding.Hand, protectedIds,
+                                    level.Gameplay.Notes.Max(note => note.Id), foundation.Gameplay.Notes)
+                                : ParityRhythmOptions.Around(prepared, best.Notes, finding.Beat,
+                                finding.Hand, protectedIds, resetIds, windowRadius: radius)
+                                .GroupBy(option => option.EditCount).SelectMany(group => group
+                                    .OrderBy(option => option.Cost).Take(!wide && group.Key == 1 ? 20 : 18));
+                            foreach (var option in candidates)
                             {
-                                var result = await NativeChartGenerator.Generate(prepared, optionPattern,
-                                    trialSeeds, profile, speed,
-                                    halfJump * 60 / level.Bpm, runtime, searchToken, draft: candidate =>
+                                screened++;
+                                var findings = Errors(await Audit(option.Notes, level.Gameplay.Bombs, searchToken));
+                                if ((wide || !findings.Contains(finding)) && findings.IsSubsetOf(previousRaw) &&
+                                    previousRaw.Where(inherited.Contains).All(findings.Contains))
+                                {
+                                    options.Add((option, findings.Count(previous.Contains)));
+                                    if (wide && !findings.Contains(finding) &&
+                                        option.Notes.Count == best.Notes.Count + option.EditCount &&
+                                        option.Notes.Where(note => !existingIds.Contains(note.Id))
+                                            .All(note => level.Gameplay.Bombs.Any(bomb => Math.Abs(bomb.Beat - note.Beat) <= .0001)))
+                                        setupDoubles.Add(option);
+                                }
+                            }
+                            reasons[finding] = screened == 0 ? "No eligible local edits" :
+                                options.Count == 0 ? "No candidate improved parity while preserving inherited findings" :
+                                "Placement search interrupted";
+                            foreach (var (option, _) in options.OrderBy(item => setupDoubles.Contains(item.Option) ? 0 :
+                                    item.Option.EditCount == 0 ? 1 : 2)
+                                .ThenBy(item => item.Errors)
+                                .ThenByDescending(item => NestedTimings.Group(item.Option.Notes).Count(attack =>
+                                    authoredDoubles.Contains(attack.Beat) &&
+                                    attack.Notes.Select(note => note.Hand).Distinct().Count() == 2))
+                                .ThenBy(item => item.Option.Cost).Take(quick ? 6 : wide ? 6 : 3))
+                            {
+                                var rhythm = option.Notes.Select(note =>
+                                    baselineById.GetValueOrDefault(note.Id, note) with { Hand = note.Hand }).ToArray();
+                                var optionPattern = PatternPreparation.Prepare(foundation, prepared, rhythm);
+                                var settled = option.Notes.ToDictionary(note => note.Id);
+                                var trialSeeds = optionPattern.Seeds.Select(seed => optionPattern.Anchors.Contains(seed.Note.Id)
+                                    ? seed.Note : settled[seed.Note.Id]).ToArray();
+                                bool exactSetup = quick || setupDoubles.Contains(option);
+                                if (quick && benchmarkParity)
+                                    Console.Error.WriteLine($"Quick parity trial {target.Difficulty} {finding.Beat:R}/{finding.Hand}: " +
+                                        string.Join(", ", option.Notes.Where(note => !existingIds.Contains(note.Id))
+                                            .Select(note => FormattableString.Invariant($"{note.Beat:R}/{note.Hand}/{note.X}/{note.Y}/{note.Direction}"))));
+                                var fixedOutside = wide || reusePlacement || quick ? trialSeeds
+                                    .Where(note => !optionPattern.Anchors.Contains(note.Id) &&
+                                        (exactSetup || clock.Gap(note.Beat, first) > .30 || clock.Gap(last, note.Beat) > .30))
+                                    .Select(note => note.Id).ToHashSet() : null;
+                                if (!quick && exactSetup && benchmarkParity)
+                                    Console.Error.WriteLine($"Testing bomb double setup at {string.Join(", ", option.Notes
+                                        .Where(note => !existingIds.Contains(note.Id)).Select(note => note.Beat))} for {finding.Beat}.");
+                                PlacementDraft placed = null;
+                                bool sawSeeds = false;
+                                using var quickTrial = quick ? CancellationTokenSource.CreateLinkedTokenSource(searchToken) : null;
+                                quickTrial?.CancelAfter(TimeSpan.FromSeconds(1.5));
+                                try
+                                {
+                                    (IReadOnlyList<Note> Notes, ISet<ChartLinkId> Released) result;
+                                    try
                                     {
-                                        if (sawSeeds) placed = candidate;
-                                        sawSeeds = true;
-                                    },
-                                    foundation: foundation, defaultAdherence: defaultAdherence);
-                                placed = new PlacementDraft(result.Notes, result.Released,
-                                    await Audit(result.Notes, level.Gameplay.Bombs, searchToken));
+                                        result = await PlaceTrial(fixedOutside);
+                                    }
+                                    catch (PlacementDeadEnd deadEnd) when (quick &&
+                                        deadEnd.Reason is "Bounded placement budget exhausted" or "No joint geometry" or "No source-relative geometry")
+                                    {
+                                        // The quick pass pins the candidate's cells. If those cells cannot
+                                        // join the approach, reopen only the local, unprotected notes.
+                                        var boundary = fixedOutside.Where(id => protectedIds.Contains(id) ||
+                                            Math.Abs(clock.Gap(settled[id].Beat, deadEnd.Beat)) > .75).ToHashSet();
+                                        if (boundary.Count == fixedOutside.Count)
+                                            throw;
+                                        placed = null;
+                                        sawSeeds = false;
+                                        quickTrial.CancelAfter(TimeSpan.FromSeconds(2));
+                                        result = await PlaceTrial(boundary);
+                                    }
+                                    placed = new PlacementDraft(result.Notes, result.Released,
+                                        parityAudits.TryGetValue(result.Notes, out var validatedAudit)
+                                            ? validatedAudit : await Audit(result.Notes, level.Gameplay.Bombs, searchToken));
+
+                                    Task<(IReadOnlyList<Note> Notes, ISet<ChartLinkId> Released)> PlaceTrial(ISet<int> pinned) =>
+                                        NativeChartGenerator.Generate(prepared, optionPattern,
+                                        trialSeeds, profile, speed,
+                                        halfJump * 60 / level.Bpm, runtime, quickTrial?.Token ?? searchToken, draft: candidate =>
+                                        {
+                                            if (sawSeeds) placed = candidate;
+                                            sawSeeds = true;
+                                        },
+                                        foundation: foundation, defaultAdherence: defaultAdherence,
+                                        fixedOutsideWindow: pinned, audited: RecordAudit);
+                                }
+                                catch (OperationCanceledException) when (quickTrial?.IsCancellationRequested == true &&
+                                    !searchToken.IsCancellationRequested)
+                                {
+                                    reasons[finding] = "Quick double placement budget exhausted";
+                                    if (benchmarkParity)
+                                        Console.Error.WriteLine($"Quick parity trial {finding.Beat:R}: placement budget exhausted.");
+                                    continue;
+                                }
+                                catch (PlacementDeadEnd failure) when (failure.Reason.StartsWith("Unexpected parity ", StringComparison.Ordinal))
+                                {
+                                    // The candidate passed geometry and reset checks before its parity finding.
+                                }
+                                catch (Exception error) when (error is PlacementDeadEnd or DirectionPathFailure)
+                                {
+                                    reasons[finding] = error.Message;
+                                    if (quick && benchmarkParity)
+                                        Console.Error.WriteLine($"Quick parity trial {finding.Beat:R}: {error.Message}");
+                                    if (error is DirectionPathFailure)
+                                    {
+                                        var match = System.Text.RegularExpressions.Regex.Match(error.Message,
+                                            @"at beat (\S+) \((left|right) hand\)");
+                                        if (match.Success && double.TryParse(match.Groups[1].Value,
+                                            System.Globalization.NumberStyles.Float,
+                                            System.Globalization.CultureInfo.InvariantCulture, out double blockedBeat))
+                                        {
+                                            int hand = match.Groups[2].Value == "left" ? 0 : 1;
+                                            directionBlockers.UnionWith(previous.Where(item =>
+                                                item.Hand == hand && Math.Abs(item.Beat - blockedBeat) <= .0001));
+                                        }
+                                    }
+                                    continue;
+                                }
+                                if (placed == null)
+                                    continue;
+                                try
+                                {
+                                    level.Gameplay.WriteWithLinks(placed.Notes, prepared.Links.Optional, placed.Released);
+                                }
+                                catch (InvalidDataException)
+                                {
+                                    reasons[finding] = "Retained link validation rejected the candidate";
+                                    continue;
+                                }
+                                var findings = Errors(placed.Audit);
+                                var placedById = placed.Notes.ToDictionary(note => note.Id);
+                                string rejection = findings.Contains(finding) ? "Target parity error remained" :
+                                    !findings.IsSubsetOf(previous) ? "Candidate introduced new parity errors" :
+                                    !previousRaw.Where(inherited.Contains).All(Errors(placed.Audit, includeDrumming: true).Contains)
+                                        ? "Candidate changed an inherited parity finding" :
+                                    best.Notes.Where(note => protectedIds.Contains(note.Id))
+                                        .Any(note => !placedById.TryGetValue(note.Id, out var output) || output != note)
+                                        ? "Candidate changed a protected note" : null;
+                                if (rejection != null)
+                                {
+                                    reasons[finding] = rejection;
+                                    if (quick && benchmarkParity)
+                                        Console.Error.WriteLine($"Quick parity trial {finding.Beat:R}: {rejection}");
+                                    continue;
+                                }
+                                approved = rhythm;
+                                baselineById = approved.ToDictionary(note => note.Id);
+                                generated = (placed.Notes, placed.Released);
+                                best = placed;
+                                previous = findings;
+                                break;
                             }
-                            catch (PlacementDeadEnd failure) when (failure.Reason.StartsWith("Unexpected parity ", StringComparison.Ordinal))
-                            {
-                                // The candidate passed geometry and reset checks before its parity finding.
-                            }
-                            catch (Exception error) when (error is PlacementDeadEnd or DirectionPathFailure)
-                            {
-                                reasons[finding] = error.Message;
-                                continue;
-                            }
-                            if (placed == null)
-                                continue;
-                            try
-                            {
-                                level.Gameplay.WriteWithLinks(placed.Notes, prepared.Links.Optional, placed.Released);
-                            }
-                            catch (InvalidDataException)
-                            {
-                                reasons[finding] = "Retained link validation rejected the candidate";
-                                continue;
-                            }
-                            var findings = Errors(placed.Audit);
-                            var placedById = placed.Notes.ToDictionary(note => note.Id);
-                            reasons[finding] = "Placed candidate failed parity or protected-note checks";
-                            if (findings.Contains(finding) || !findings.IsSubsetOf(previous) ||
-                                !previous.Where(inherited.Contains).All(findings.Contains) ||
-                                best.Notes.Where(note => protectedIds.Contains(note.Id))
-                                    .Any(note => !placedById.TryGetValue(note.Id, out var output) || output != note))
-                                continue;
-                            approved = rhythm;
-                            baselineById = approved.ToDictionary(note => note.Id);
-                            generated = (placed.Notes, placed.Released);
-                            best = placed;
-                            previous = findings;
-                            break;
                         }
                     }
-                }
-                catch (OperationCanceledException) when (searchBudget.IsCancellationRequested && !token.IsCancellationRequested)
-                {
-                    // Keep the best completed alternative.
+                    catch (OperationCanceledException) when (searchBudget.IsCancellationRequested && !token.IsCancellationRequested)
+                    {
+                        // Keep the best completed alternative.
+                    }
                 }
                 if (best != draft || reasons.Count > 0)
                 {
@@ -343,14 +679,32 @@ internal static class EditorGeneration
                     PlacementParity.Audit(runtime, notes, bombs, Array.Empty<ParityReentry>(), level.Bpm,
                         clock.Seconds, variable, cancellation);
 
-                static HashSet<(double Beat, int Hand)> Errors(JsonObject report) => report["issues"].AsArray()
-                    .Where(issue => issue["status"].GetValue<string>() == "error")
+                static HashSet<(double Beat, int Hand)> Errors(JsonObject report, bool includeDrumming = false) => report["issues"].AsArray()
+                    .Where(issue => issue["status"].GetValue<string>() == "error" &&
+                        (includeDrumming || issue["allowedDrumming"]?.GetValue<bool>() != true))
                     .Select(issue => (StandardSong.Number(issue["beat"]), issue["hand"].GetValue<int>())).ToHashSet();
             }
             var (chart, _, _) = prepared.Level.Gameplay.WriteWithLinks(generated.Notes, prepared.Links.Optional, generated.Released);
             StageChart.Write(transaction.Staging, prepared.Level, foundation, target.Difficulty, chart, speed, offset, approved);
+            if (benchmarkParity)
+            {
+                var level = prepared.Level;
+                var final = parityAudits.TryGetValue(generated.Notes, out var validated)
+                    ? validated
+                    : await AuditChart(level, generated.Notes);
+                var baseline = await AuditChart(foundation, foundation.Gameplay.Notes);
+                File.WriteAllText(Path.Combine(reports, target.Difficulty + "-parity-audit.json"),
+                    JsonSerializer.Serialize(new { baseline = baseline["issues"], final = final["issues"],
+                        placementAudited = validated != null }));
+
+                Task<JsonObject> AuditChart(StandardLevel chartLevel, IReadOnlyList<Note> notes) =>
+                    PlacementParity.Audit(runtime, notes, chartLevel.Gameplay.Bombs, Array.Empty<ParityReentry>(),
+                        chartLevel.Bpm, chartLevel.Clock.Seconds,
+                        chartLevel.Clock.Regions.Count != 1 || chartLevel.Clock.Regions[0].SecondsPerBeat != 60 / chartLevel.Bpm, token);
+            }
 
             bool Survives(double beat) => transaction.Completed.All(rank => NestedTimings.Nearest(beat, saved[rank]) >= 0);
+
         }
     }
 

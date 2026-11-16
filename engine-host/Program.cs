@@ -29,6 +29,8 @@ try
 }
 catch (Exception error)
 {
+    if (Environment.GetEnvironmentVariable("BS_DOWNMAP_BENCHMARK_PARITY") == "1")
+        Console.Error.WriteLine(error);
     Console.Error.WriteLine(args.Length == 1 && args[0].StartsWith("editor-", StringComparison.Ordinal) ?
         "DOWNMAP_ERROR: " + error.Message : error.Message);
     return 1;

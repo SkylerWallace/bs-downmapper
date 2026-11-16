@@ -110,6 +110,27 @@ namespace BsDownmap.Engine
             return result;
         }
 
+        internal static bool BlocksWallApproach(Note note, Wall wall)
+        {
+            if (note.Beat < wall.Beat || note.Beat >= wall.Beat + wall.Duration)
+                return false;
+            var center = new Point(note.X, note.Y);
+            var start = note.Direction == 8 ? center : Cut(note, .75).Start;
+            double enter = 0, exit = 1;
+            return Clip(start.X, center.X - start.X, wall.X - .5, wall.X + wall.Width - .5) &&
+                Clip(start.Y, center.Y - start.Y, wall.Y - .5, wall.Y + wall.Height - .5);
+
+            bool Clip(double origin, double delta, double low, double high)
+            {
+                if (Math.Abs(delta) < 1e-9)
+                    return low <= origin && origin <= high;
+                double first = (low - origin) / delta, last = (high - origin) / delta;
+                enter = Math.Max(enter, Math.Min(first, last));
+                exit = Math.Min(exit, Math.Max(first, last));
+                return enter <= exit;
+            }
+        }
+
         internal static IEnumerable<int> WallConflicts(
             Note note, IReadOnlyList<Wall> walls, Func<double, double> seconds, double recoverySeconds)
         {

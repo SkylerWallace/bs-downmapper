@@ -1,6 +1,6 @@
 {
   "handAlternation": 0.25,
-  "parityAdherence": 0.85,
+  "parityAdherence": 0.90,
   "name": "Hard authored-rhythm profile",
   "minimumSourceNoteRatio": 0.6,
   "maximumSourceNoteRatio": 0.7,
@@ -9,7 +9,7 @@
   "regularStreamMinimumNotes": 8,
   "regularStreamMaximumGapBeats": 0.5,
   "regularStreamRateReviewNps": 10,
-  "diagonalPreference": 2.85,
+  "diagonalPreference": 3.50,
   "preserveSourceResets": true,
   "horizontalRetention": 2.0,
   "flattenOutwardDiagonals": true,

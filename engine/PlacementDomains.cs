@@ -75,7 +75,8 @@ namespace BsDownmap.Engine
         {
             if (domain.LinkedAnchor)
             {
-                yield return new CellOption(note, 0, 0);
+                if (!domain.Context.Walls.Any(wall => SwingClearance.BlocksWallApproach(note, wall)))
+                    yield return new CellOption(note, 0, 0);
                 yield break;
             }
 
@@ -110,12 +111,25 @@ namespace BsDownmap.Engine
                 if (clearances.Any(pair => pair.Value < .8 && sourceBombs.GetValueOrDefault(pair.Key, double.PositiveInfinity) >= .8 ||
                     sourceBombs.TryGetValue(pair.Key, out double baseline) && pair.Value < Math.Min(.8, baseline) - .05))
                     continue;
-                if (SwingClearance.WallConflicts(candidate, context.Walls, seconds, domain.WallClearance)
+                if (context.Walls.Any(wall => SwingClearance.BlocksWallApproach(candidate, wall)) ||
+                    SwingClearance.WallConflicts(candidate, context.Walls, seconds, domain.WallClearance)
                     .Any(index => !sourceWalls.Contains(index)) || obscuredByWall(candidate))
                     continue;
 
                 double shapeCost = PlacementPolicy.Preference(candidate, source, null, intent, context.Placement,
                     bombVisibility(candidate)) + 5 * Math.Max(0, candidateReach - domain.ReachLimit);
+                if (candidate.Y == 2 && controls.GetValueOrDefault("softTopRowSpacing") != 0)
+                {
+                    double spacing = controls[candidate.Direction switch
+                    {
+                        8 => "topDotSpacingSeconds",
+                        1 or 6 or 7 => "topPalmSpacingSeconds",
+                        _ => "topRowSpacingSeconds",
+                    }];
+                    double preferredGap = spacing / (.5 + controls["height"]);
+                    if (preferredGap > 0)
+                        shapeCost += 6 * Math.Max(0, 1 - context.Placement.Gap / preferredGap);
+                }
                 if (domain.RetainOpeningDot && moved)
                     shapeCost += 25;
                 if (domain.Repair is CellRepair.Clearance or CellRepair.StackClearance)

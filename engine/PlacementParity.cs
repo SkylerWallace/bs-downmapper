@@ -135,6 +135,13 @@ namespace BsDownmap.Engine
                 }
             }
 
+            bool IsAllowedDrumming(JsonNode issue) => adherence < 1 &&
+                verifiedRepeats.Contains((Math.Round(Number(issue["beat"]), 4), issue["hand"].GetValue<int>())) &&
+                issue["directions"].AsArray().All(direction => Number(direction) == 1);
+            foreach (var issue in result["issues"].AsArray())
+                if (IsAllowedDrumming(issue))
+                    issue["allowedDrumming"] = true;
+
             foreach (var issue in result["issues"].AsArray())
             {
                 double beat = Math.Round(Number(issue["beat"]), 4);
@@ -143,7 +150,7 @@ namespace BsDownmap.Engine
                 var directions = issue["directions"].AsArray().Select(Number).ToArray();
                 bool expected = inherited.Contains((beat, hand, status)) ||
                     status == "warning" && inherited.Contains((beat, hand, "error")) ||
-                    adherence < 1 && verifiedRepeats.Contains((beat, hand)) && directions.All(direction => direction == 1) ||
+                    IsAllowedDrumming(issue) ||
                     directions.Length == 1 && verifiedResets.TryGetValue((beat, hand), out double reset) && directions[0] == reset;
                 if (expected || status == "warning")
                     continue;

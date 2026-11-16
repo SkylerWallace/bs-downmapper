@@ -1,6 +1,6 @@
 {
   "handAlternation": 0.5,
-  "parityAdherence": 0.42,
+  "parityAdherence": 0.50,
   "name": "Normal authored-rhythm profile",
   "minimumSourceNoteRatio": 0.4,
   "maximumSourceNoteRatio": 0.5,

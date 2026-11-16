@@ -71,6 +71,25 @@ internal static class EditorPreview
             if (double.IsFinite(alternation))
                 selected = TimingParityRepair.AlternateHands(prepared, selected, Math.Clamp(alternation, 0, 1.5));
 
+            if (request["placement-hand-fallback"]?.GetValue<bool>() == true)
+            {
+                var groups = NestedTimings.Group(original);
+                var links = TimelineRepeats.Find(level, original).Sections.SelectMany(section => section.Links).ToArray();
+                var beats = groups.Select(group => group.Beat).ToArray();
+                var kept = selected.Select(note => NestedTimings.Nearest(note.Beat, beats)).ToHashSet();
+                var additions = new List<Note>();
+                int previousCount;
+                do
+                {
+                    previousCount = kept.Count;
+                    foreach (var link in links.Where(link => link.Any(kept.Contains)))
+                        foreach (int index in link)
+                            if (kept.Add(index))
+                                additions.Add(groups[index].Notes[0]);
+                } while (previousCount != kept.Count);
+                selected = selected.Concat(additions).OrderBy(note => note.Beat).ThenBy(note => note.Hand).ToArray();
+            }
+
             NativeReferencePlan CreatePlan()
             {
                 using var asset = File.OpenRead(Required(request, "ranker"));

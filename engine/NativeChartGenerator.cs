@@ -17,7 +17,9 @@ namespace BsDownmap.Engine
         internal static async Task<(IReadOnlyList<Note> Notes, ISet<ChartLinkId> Released)> Generate(PreparedTiming rhythm, PreparedPattern pattern,
             IReadOnlyList<Note> seeds, JsonObject profile, double jumpSpeed, double approach, DirectionRuntime runtime,
             CancellationToken cancellation, Action checking = null, Action<PlacementDraft> draft = null,
-            StandardLevel foundation = null, double defaultAdherence = 1, ISet<int> fixedOutsideWindow = null)
+            StandardLevel foundation = null, double defaultAdherence = 1, ISet<int> fixedOutsideWindow = null,
+            Action<PlacementDeadEnd> blocked = null, bool tryHandsEarly = false,
+            Action<IReadOnlyList<Note>, JsonObject> audited = null)
         {
             var level = rhythm.Level;
             var clock = level.Clock;
@@ -115,10 +117,12 @@ namespace BsDownmap.Engine
             int feedbackPasses = localRepair ? 0 : (int)Math.Round(4 * adherence);
             var inheritedErrors = Errors(original);
             var plannerParity = (JsonArray)original["issues"].DeepClone();
+            JsonArray seedIssues = null;
             if (draft != null || fixedOutsideWindow != null)
             {
                 var seedAudit = await PlacementParity.Audit(runtime, seeds, bombs, Array.Empty<ParityReentry>(),
                     level.Bpm, clock.Seconds, VariableTempo(), cancellation).ConfigureAwait(false);
+                seedIssues = seedAudit["issues"].AsArray();
                 draft?.Invoke(new PlacementDraft(seeds, released.ToHashSet(), seedAudit));
                 if (fixedOutsideWindow != null)
                     foreach (var issue in seedAudit["issues"].AsArray())
@@ -158,7 +162,7 @@ namespace BsDownmap.Engine
                         ["transitionPreferences"] = profile["transitionPreferences"]?.DeepClone() ?? new JsonObject(),
                     };
                     var result = await DirectedPlacement.Place(runtime, input, _ => updated, Validate,
-                        attempt > 0, repairs.Count > 0, cancellation, localRepair).ConfigureAwait(false);
+                        attempt > 0, repairs.Count > 0, cancellation, localRepair, tryHandsEarly).ConfigureAwait(false);
                     return (result.Notes, released);
 
                     async Task<IReadOnlyList<Note>> Validate(IReadOnlyList<Note> candidate, JsonObject report, CancellationToken token)
@@ -236,12 +240,19 @@ namespace BsDownmap.Engine
                             draft(new PlacementDraft(candidate, released.ToHashSet(), audit));
                             throw;
                         }
+                        finally
+                        {
+                            audited?.Invoke(candidate, audit);
+                        }
                         return candidate;
                     }
                 }
                 catch (PlacementDeadEnd failure) when (attempt < 17 &&
                     (!localRepair || !failure.Reason.StartsWith("Unexpected parity ", StringComparison.Ordinal)))
                 {
+                    blocked?.Invoke(failure);
+                    bool jointGeometry = failure.Reason == "No joint geometry";
+                    bool repairedHere = repairs.Any(beat => Math.Abs(beat - failure.Beat) <= .0001);
                     if (failure.Reason.StartsWith("Unexpected parity ", StringComparison.Ordinal) &&
                         feedbackPasses > 0 && lastAudited != null)
                     {
@@ -253,14 +264,18 @@ namespace BsDownmap.Engine
                     if (failure.Reason == "No geometric direction domain" && Relocate(failure.Notes))
                         continue;
                     var fixedNotes = failure.Notes.Select(note => note.Id).Concat(failure.Blockers ?? Array.Empty<int>()).ToArray();
-                    if ((failure.VisibilityTarget.HasValue || repairs.Any(beat => Math.Abs(beat - failure.Beat) <= .0001)) &&
+                    if ((failure.Reason == "No geometric direction domain" || failure.VisibilityTarget.HasValue ||
+                        repairedHere) &&
                         ReleaseOptional(fixedNotes))
                         continue;
                     if (failure.Reason is "No joint geometry" or "Bounded placement budget exhausted" &&
                         failure.Notes.GroupBy(note => note.Hand).Any(hand => hand.Count() > 1) && PreserveStackAxes(failure.Beat))
                         continue;
+                    if (tryHandsEarly && jointGeometry &&
+                        (repairedHere || repairs.Count >= PlacementPolicy.MaximumRepairWindows))
+                        throw;
                     if (repairs.Count >= PlacementPolicy.MaximumRepairWindows ||
-                        repairs.Any(beat => Math.Abs(beat - failure.Beat) <= .0001))
+                        repairedHere)
                     {
                         var candidates = seeds.Where(note => Math.Abs(clock.Gap(note.Beat, failure.Beat)) <= .30 &&
                             !anchors.Contains(note.Id) && !clearance.Contains(note.Id) &&
@@ -312,6 +327,19 @@ namespace BsDownmap.Engine
                     {
                         if (ReleaseOptional(recent.Select(note => note.Id)))
                             continue;
+                        // An existing seed error can unblock geometry search. Validation still
+                        // compares the placed chart with the actual foundation.
+                        if (tryHandsEarly && seedIssues != null)
+                        {
+                            bool AtBlocker(JsonNode issue) => issue["hand"].GetValue<int>() == hand &&
+                                Math.Abs(StandardSong.Number(issue["beat"]) - beat) <= .0001;
+                            var seedIssue = seedIssues.FirstOrDefault(AtBlocker);
+                            if (seedIssue != null && !plannerParity.Any(AtBlocker))
+                            {
+                                plannerParity.Add(seedIssue.DeepClone());
+                                continue;
+                            }
+                        }
                         throw;
                     }
                     foreach (int id in new[] { pair.First.Id, pair.Second.Id })

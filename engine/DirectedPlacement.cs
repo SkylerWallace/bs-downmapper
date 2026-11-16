@@ -24,7 +24,7 @@ namespace BsDownmap.Engine
             DirectionRuntime runtime, JsonObject input, Func<IReadOnlyList<Note>, PlacementPlan> plan,
             Func<IReadOnlyList<Note>, JsonObject, CancellationToken, Task<IReadOnlyList<Note>>> validate,
             bool repairEmptyDomains, bool boundedRepair, CancellationToken cancellation,
-            bool stopAfterParityRepair = false)
+            bool stopAfterParityRepair = false, bool tryHandsEarly = false)
         {
             var notes = ReadSearchNotes(input);
             var byId = notes.ToDictionary(note => note.Note.Id);
@@ -38,6 +38,7 @@ namespace BsDownmap.Engine
             DirectedPlacementResult best = null;
             (double Cost, double Motion) bestRank = (double.PositiveInfinity, double.PositiveInfinity);
             int extraAttempts = 0;
+            var repeatedGeometry = new Dictionary<(double Beat, string Reason), int>();
 
             while (pending.Count > 0)
             {
@@ -93,10 +94,20 @@ namespace BsDownmap.Engine
                 }
                 catch (PlacementDeadEnd failure) when (!auditing || !stopAfterParityRepair)
                 {
+                    if (Environment.GetEnvironmentVariable("BS_DOWNMAP_TRACE_DOMAINS") == "1")
+                        Console.Error.WriteLine($"{mode}: {failure.Message}");
                     if (auditing)
                         auditFailure = failure;
                     else
+                    {
                         placementFailure = failure;
+                        var blocked = (failure.Beat, failure.Reason);
+                        repeatedGeometry.TryGetValue(blocked, out int repeats);
+                        repeatedGeometry[blocked] = repeats + 1;
+                        if (best == null && (repeats >= 5 ||
+                            tryHandsEarly && repeats >= 1 && failure.Reason == "No joint geometry"))
+                            throw;
+                    }
                     QueueFailureAlternatives(attempt, failure, directed, placementPlan);
                     if (repairEmptyDomains && !auditing)
                         QueueGroupAlternatives(attempt, failure.Beat, failure.Notes);

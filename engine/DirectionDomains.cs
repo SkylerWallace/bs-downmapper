@@ -65,7 +65,8 @@ namespace BsDownmap.Engine
                     break;
                 }
                 if (!domains.ContainsKey(note.Id))
-                    throw new PlacementDeadEnd(note.Beat, new[] { note }, "No geometric direction domain");
+                    throw new PlacementDeadEnd(note.Beat, new[] { note }, "No geometric direction domain",
+                        blockers: anchorNeighbors.Select(anchor => anchor.Note.Id).ToArray());
             }
             return domains;
         }

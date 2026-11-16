@@ -60,7 +60,8 @@ namespace BsDownmap.Engine
                     yield return "height_disabled";
                 double minimum = note.Direction == 8 ? controls["topDotSpacingSeconds"] :
                     palm ? controls["topPalmSpacingSeconds"] : controls["topRowSpacingSeconds"];
-                if (context.Placement.Gap < minimum / (.5 + height) && !resetUp)
+                if (context.Placement.Gap < minimum / (.5 + height) && !resetUp &&
+                    controls.GetValueOrDefault("softTopRowSpacing") == 0)
                     yield return "top_row_recovery";
 
                 foreach (var wall in context.Walls)
