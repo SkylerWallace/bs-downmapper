@@ -78,7 +78,11 @@ namespace BsDownmap.Engine
             var secondCut = Cut(second, 1.25);
             if (first.Hand != second.Hand)
             {
-                if (Distance(firstCut, secondCut) <= 0.2)
+                var (left, right) = first.X <= second.X ? (first, second) : (second, first);
+                // Same-row inward swings can meet in follow-through even from the widest lanes.
+                bool opposingInward = left.Y == right.Y && left.Direction == 3 && right.Direction == 2 &&
+                    left.Angle == 0 && right.Angle == 0;
+                if (opposingInward || Distance(firstCut, secondCut) <= 0.2)
                     yield return "G01";
                 yield break;
             }

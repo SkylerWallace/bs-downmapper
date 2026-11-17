@@ -78,6 +78,8 @@ namespace BsDownmap.Engine
 
             bool ownOuter = candidate.X == candidate.Hand * 3;
             double width = ownOuter ? (1 - controls.GetValueOrDefault("width", .75)) * (5.0 / 3) : 0;
+            double outerInward = candidate.X == 0 && candidate.Direction == 3 ||
+                candidate.X == 3 && candidate.Direction == 2 ? 3 : 0;
 
             double sourceDepth = CrossoverDepth(source);
             double crossover = (1 - controls.GetValueOrDefault("crossover", .55)) * 3 *
@@ -99,7 +101,7 @@ namespace BsDownmap.Engine
             }
             return position + (height + width) * context.RampScale * sparseScale +
                 crossover * context.RampScale * (depth == 1 && sourceDepth == 1 ? sparseScale : 1) +
-                travel + bombVisibility;
+                outerInward + travel + bombVisibility;
         }
 
         public static double SideWallRecoveryGap(
