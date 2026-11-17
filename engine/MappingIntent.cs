@@ -41,6 +41,7 @@ namespace BsDownmap.Engine
                     continue;
                 var cues = Enumerable.Range(0, bombs.Count).Where(i =>
                     first.Beat < bombs[i].Beat && bombs[i].Beat < second.Beat &&
+                    (bombs[i].Y != 0 || first.Direction is 1 or 6 or 7) &&
                     new SwingClearance.Point(bombs[i].X - first.X, bombs[i].Y - first.Y).Length <= .51).ToArray();
                 if (cues.Length == 0)
                     continue;
@@ -77,6 +78,7 @@ namespace BsDownmap.Engine
                 }
             }
             return new SourceGestures(pairs, returns, exits);
+
         }
 
         private static IEnumerable<PairedGesture> PairedCalls(

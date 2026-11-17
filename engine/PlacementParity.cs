@@ -13,6 +13,52 @@ namespace BsDownmap.Engine
 
     internal static class PlacementParity
     {
+        internal static Dictionary<(double Beat, int Hand), string> States(JsonObject audit, string field) =>
+            audit["trace"].AsArray()
+                .GroupBy(item => (Math.Round(Number(item["beat"]), 4), item["hand"].GetValue<int>()))
+                .Where(group => group.Count() == 1 && group.Single()[field] != null)
+                .ToDictionary(group => group.Key, group => group.Single()[field].GetValue<string>());
+
+        internal static JsonNode[] ExpandLinkedPatch(JsonNode[] local, ILookup<double, double> links,
+            IReadOnlyDictionary<(double Beat, int Hand), int[]> domains,
+            IReadOnlyDictionary<(double Beat, int Hand), string> states)
+        {
+            if (local.Any(edit => edit["cell"] != null || edit["solveCell"] != null))
+                return null;
+
+            var expanded = local.ToDictionary(edit => (Beat: Number(edit["beat"]), Hand: edit["hand"].GetValue<int>()));
+            var pending = new Queue<(double Beat, int Hand)>(expanded.Keys);
+            while (pending.Count > 0)
+            {
+                var key = pending.Dequeue();
+                if (!states.TryGetValue((Math.Round(key.Beat, 4), key.Hand), out string state))
+                    continue;
+                int direction = expanded[key]["after"][0].GetValue<int>();
+                foreach (double beat in links[key.Beat])
+                {
+                    if (beat == key.Beat)
+                        continue;
+                    var counterpart = (beat, key.Hand);
+                    if (!states.TryGetValue((Math.Round(beat, 4), key.Hand), out string other) || other != state ||
+                        domains.GetValueOrDefault(counterpart)?.Contains(direction) != true)
+                        return null;
+                    if (expanded.TryGetValue(counterpart, out var existing))
+                    {
+                        if (existing["after"][0].GetValue<int>() != direction)
+                            return null;
+                        continue;
+                    }
+                    expanded.Add(counterpart, new JsonObject
+                    {
+                        ["beat"] = beat, ["hand"] = key.Hand,
+                        ["after"] = new JsonArray(JsonValue.Create(direction)),
+                    });
+                    pending.Enqueue(counterpart);
+                }
+            }
+            return expanded.Count > local.Length ? expanded.Values.ToArray() : null;
+        }
+
         internal static async Task<JsonObject> Audit(DirectionRuntime runtime, IReadOnlyList<Note> notes,
             IReadOnlyList<Bomb> bombs, IReadOnlyList<ParityReentry> reentries, double bpm,
             Func<double, double> seconds, bool variableTempo, CancellationToken cancellation,

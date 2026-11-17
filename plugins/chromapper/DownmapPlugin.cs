@@ -521,7 +521,7 @@ public sealed class DownmapPlugin
             generate.Selectable.interactable = settings != null;
             if (settings != null)
             {
-                foundation.SetValueWithoutNotify(Array.IndexOf(request.Charts, settings.Foundation));
+                CmuiCompatibility.SetValueWithoutNotify(foundation, Array.IndexOf(request.Charts, settings.Foundation));
                 timing.WithOptions(request.TimingModels.Select(item =>
                 {
                     string label = item["id"].Value == NestedTimingModel ? Guess : $"Auto: {item["label"].Value}";
@@ -532,7 +532,7 @@ public sealed class DownmapPlugin
                         ? Label(chart) + " (edited)" : Label(chart))));
                 int selection = settings.Timing == Guess ? Array.IndexOf(modelIds, settings.TimingModel)
                     : modelIds.Length + Array.IndexOf(request.Charts, settings.Timing);
-                timing.SetValueWithoutNotify(selection);
+                CmuiCompatibility.SetValueWithoutNotify(timing, selection);
                 RefreshSettings(settings);
             }
             if (dialog.gameObject.activeInHierarchy) RefreshNavigation(dialog);
@@ -563,7 +563,7 @@ public sealed class DownmapPlugin
             bool nested = settings.TimingModel == NestedTimingModel;
             alternationSlot.gameObject.SetActive(settings.Expanded);
             alternation.Selectable.interactable = automatic && nested && settings.AutomaticDraft.Edits == null;
-            alternation.SetValueWithoutNotify(settings.HandAlternation ?? (profile == null ? 0 : profile["handAlternation"].AsFloat));
+            CmuiCompatibility.SetValueWithoutNotify(alternation, settings.HandAlternation ?? (profile == null ? 0 : profile["handAlternation"].AsFloat));
             timingDefaultsSlot.gameObject.SetActive(automatic);
             timingOptions.Show(automatic ? settings.TimingModel : null, settings.TimingOptions(settings.TimingModel));
 
@@ -573,9 +573,9 @@ public sealed class DownmapPlugin
             if (profile != null)
                 presetPercent = Mathf.RoundToInt(50 * (profile["minimumSourceNoteRatio"].AsFloat +
                     profile["maximumSourceNoteRatio"].AsFloat));
-            budget.SetValueWithoutNotify(settings.TargetNotePercent ?? presetPercent);
+            CmuiCompatibility.SetValueWithoutNotify(budget, settings.TargetNotePercent ?? presetPercent);
 
-            pattern.SetValueWithoutNotify(Array.IndexOf(patternIds, settings.PatternModel));
+            CmuiCompatibility.SetValueWithoutNotify(pattern, Array.IndexOf(patternIds, settings.PatternModel));
             patternOptions.Show(settings.Expanded ? settings.PatternModel : null, settings.PatternOptions(settings.PatternModel));
             arrowRect.localRotation = Quaternion.Euler(0, 0, settings.Expanded ? 0 : 90);
             generator.SetVisible(settings.Expanded);
@@ -683,7 +683,7 @@ public sealed class DownmapPlugin
         {
             if (field.Value != enabled)
             {
-                field.SetValueWithoutNotify(enabled);
+                CmuiCompatibility.SetValueWithoutNotify(field, enabled);
             }
             button.interactable = enabled;
             float num3 = (active ? 0.27f : 0.16f);
@@ -827,6 +827,8 @@ public sealed class DownmapPlugin
             list.Add("--hand-alternation");
             list.Add(current.HandAlternation.Value.ToString(CultureInfo.InvariantCulture));
         }
+        if (current.Timing == Guess && !string.IsNullOrEmpty(current.Settings))
+            list.AddRange(new[] { "--placement-settings", WriteInput(current.Settings, temporary) });
         if (current.Timing == Guess && current.TargetNotePercent.HasValue)
         {
             list.AddRange(new string[2]

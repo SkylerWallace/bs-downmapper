@@ -16,6 +16,7 @@ try
         "nested-priority" => BuildPriority(input),
         "reference-priority" => ReferencePriority(input),
         "editor-preview" => await EditorPreview.Run(input),
+        "editor-parity-preview" => await EditorParityPreview.Run(input),
         "editor-generate" => await EditorGeneration.Run(input),
         "publish" => Publish(input),
         "place" => Place(input),

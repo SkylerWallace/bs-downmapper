@@ -1,5 +1,51 @@
 const assert = require("node:assert/strict"),
   { solve } = require("./plan_directions.cjs");
+const { audit } = require("./check_parity.cjs");
+
+// An explicit return can preserve an authored reset that the generic
+// directional heuristics cannot infer on their own.
+const bombReturn = [
+  { id: 1, b: 2, c: 1, x: 3, y: 0, d: 6, a: 0, geometryDirections: [6],
+    intent: { kind: "bomb_return_reset", allowedDirections: [6] } },
+  { id: 2, b: 3.5, c: 1, x: 2, y: 0, d: 6, a: 0, geometryDirections: [6],
+    intent: { kind: "bomb_return_reset", allowedDirections: [6] } },
+  { id: 3, b: 5, c: 1, x: 2, y: 1, d: 5, a: 0, geometryDirections: [5] },
+];
+const bombReturnInput = {
+  bpm: 120, notes: bombReturn, bombs: [{ b: 2.75, x: 0, y: 0 }],
+  authoredParity: [], drumming: { parityAdherence: 1 },
+};
+assert.throws(() => solve(bombReturnInput), /beat 3\.5/);
+bombReturn[1].intent.resetFromBeat = 1;
+assert.throws(() => solve(bombReturnInput), /beat 3\.5/);
+bombReturn[1].intent.resetFromBeat = 2;
+assert.deepEqual(solve(bombReturnInput).notes.map(note => note.d), [6, 6, 5]);
+
+const phaseNotes = [0, 2, 6].map((d, id) => ({
+  b: 3 + id * 0.75, c: 0, x: 1, y: 0, d, a: 0, id,
+}));
+const phaseInput = { bpm: 120, bombs: [], drumming: { parityAdherence: 1 } };
+const authoredSwing = (notes) =>
+  audit({ version: "3.0.0", colorNotes: notes, bombNotes: [] }, false, 120)
+    .trace[1].swingState;
+const baselinePhase = solve({ ...phaseInput, notes: phaseNotes }).notes;
+assert.equal(authoredSwing(baselinePhase), "forehand");
+const preferredPhase = solve({
+  ...phaseInput,
+  notes: phaseNotes.map((note, index) =>
+    index === 1 ? { ...note, sourceParityState: "backhand" } : note,
+  ),
+}).notes;
+assert.equal(authoredSwing(preferredPhase), "backhand");
+const constrainedPhase = solve({
+  ...phaseInput,
+  notes: phaseNotes.map((note, index) => ({
+    ...note,
+    sourceParityState: index === 1 ? "backhand" : undefined,
+    geometryDirections: [baselinePhase[index].d],
+  })),
+}).notes;
+assert.equal(authoredSwing(constrainedPhase), "forehand");
 function pattern(shift, scale = 1) {
   return [1, 1, 0, 0, 1, 1, 0, 0].map((d, i) => ({
     b: shift + i * 0.25 * scale,
@@ -160,7 +206,7 @@ const flexiblePair = {
   flexiblePhase: true,
   allowedDirections: [0, 1],
 };
-const pair = solve({
+const pairInput = {
   bpm: 101,
   bombs: [],
   notes: [
@@ -181,11 +227,20 @@ const pair = solve({
       intent: { ...flexiblePair, targetDirection: 0 },
     },
   ],
-});
+};
+const pair = solve(pairInput);
 assert.deepEqual(
   pair.notes.map((n) => n.d),
   [1, 0, 1],
 );
+assert.throws(() => solve({
+  ...pairInput,
+  authoredParity: [],
+  notes: pairInput.notes.map(note => note.intent ? {
+    ...note,
+    intent: { ...note.intent, flexiblePhase: false, allowedDirections: [note.intent.targetDirection] },
+  } : note),
+}), /No supported direction path at beat 22/);
 const freeCut = {
   b: 13,
   c: 0,

@@ -1,9 +1,10 @@
 /* Map-independent direction planning with optional elapsed-time samples.
- * No song names, beat ranges or reference difficulty inputs.
+ * Optional reference swing states guide the search.
  */
 const { Parity } = require(
   "../.tools/parity-runtime/node_modules/bsmap/script/extensions/parity/mod.js",
 );
+const { parityBombContext, applyReset } = require("./bomb_reset.cjs");
 const angles = [90, 270, 180, 0, 135, 45, 225, 315];
 const wrap = (a) => ((((a + 180) % 360) + 360) % 360) - 180;
 const angle = (d, a = 0) => angles[d] + a;
@@ -43,6 +44,7 @@ function solve(input) {
     posY: n.y,
     color: -1,
   }));
+  const startBombs = bombs.filter(bomb => bomb.posY !== 0);
   const output = [],
     edits = [],
     baseline = [],
@@ -70,7 +72,7 @@ function solve(input) {
       if (!gs.length || n.b - gs.at(-1)[0].b > 0.0001) gs.push([]);
       gs.at(-1).push(n);
     }
-    const initial = new Parity(notes, bombs, c, 90, 45, 90);
+    const initial = new Parity(notes, startBombs, c, 90, 45, 90);
     let state = Object.assign(
         Object.create(Object.getPrototypeOf(initial)),
         initial,
@@ -85,16 +87,16 @@ function solve(input) {
       const ctx = g[0].parityReentry
         ? []
         : bombs.filter(
-            (b) =>
-              b.time <= g[0].time + 0.00001 &&
-              (!last || b.time > last.time + 0.00001),
+            (b) => b.time <= g[0].time + 0.00001 && (!last || b.time > last.at(-1).time + 0.00001),
           );
       if (g[0].parityReentry) state = new Parity(g, [], c, 90, 45, 90);
-      const seedStatus = state.check(g, ctx);
+      const context = parityBombContext(last, ctx, g, last ? gap(last.at(-1), g[0]) : Infinity);
+      applyReset(state, context.phase);
+      const seedStatus = state.check(g, context.bombs);
       sourceStatus.push(authoredStatus ? (authoredStatus.get(g[0].b.toFixed(4)) ?? "none") : seedStatus);
       baseline.push({ hand: c, beat: g[0].b, status: sourceStatus.at(-1) });
-      state.next(g, ctx);
-      last = g[0];
+      state.next(g, context.bombs);
+      last = g;
     }
     let beam = [
       { state: initial, cost: 0, prev: null, parent: null, group: null },
@@ -217,6 +219,8 @@ function solve(input) {
           const sourceReset =
             parent.prev?.d === d &&
             source.every((n) => n.intent?.resetFromBeat === parent.prev.b);
+          const bombContext = parityBombContext(parent.group, ctx, group, dt);
+          const parityBombs = sourceReset ? [] : bombContext.bombs;
           const sourceEntryRepeat =
             dt >= 0.55 &&
             !ctx.length &&
@@ -225,14 +229,15 @@ function solve(input) {
             downward(parent.prev?.d) &&
             downward(sourcePrevious?.d) &&
             source.every((n) => n.intent?.entry && n.d === d);
-          const carried = source[0].parityReentry
+          const carried = source[0].parityReentry || sourceReset
             ? new Parity(group, [], c, 90, 45, 90)
             : !parent.prev
-              ? new Parity(group, bombs, c, 90, 45, 90)
+              ? new Parity(group, startBombs, c, 90, 45, 90)
               : Object.assign(
                   Object.create(Object.getPrototypeOf(parent.state)),
                   parent.state,
                 );
+          applyReset(carried, bombContext.phase);
           const modes = [{ state: carried, recovery: false }];
           if (
             dt >= recoverySeconds &&
@@ -258,7 +263,7 @@ function solve(input) {
             )
               continue;
             const state = mode.state;
-            const status = state.check(group, ctx);
+            const status = state.check(group, parityBombs);
             // Source-context issues may be retained explicitly, never called safe.
             const provisionalWarning =
               input.allowProvisionalParityWarning &&
@@ -271,7 +276,14 @@ function solve(input) {
               !provisionalWarning
             )
               continue;
-            state.next(group, ctx);
+            state.next(group, parityBombs);
+            const swingState = state.state;
+            const sourceParityCost =
+              status !== "error" &&
+              source[0].sourceParityState &&
+              source[0].sourceParityState !== swingState
+                ? 3 * parityAdherence
+                : 0;
             const directionCost = source.reduce((cost, n, j) => {
               if (n.linkedAnchor) return cost;
               const target = n.intent?.targetDirection ?? n.d;
@@ -360,10 +372,11 @@ function solve(input) {
               cost:
                 parent.cost +
                 directionCost +
+                sourceParityCost +
                 beginnerCost +
                 issueCost +
                 transitionCost +
-                (provisionalWarning ? 30 : 0) +
+                (provisionalWarning ? (bombContext.phase ? 150 : 30) : 0) +
                 (over && !mode.recovery && !sourceReset ? 8 : 0) +
                 (mode.recovery ? recoveryCost : 0),
               prev: group.at(-1),

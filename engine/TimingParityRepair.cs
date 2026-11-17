@@ -8,6 +8,43 @@ namespace BsDownmap.Engine
 {
     internal static class TimingParityRepair
     {
+        internal static async Task<IReadOnlyList<Note>> AlternateHandsWhenParitySafe(PreparedTiming prepared,
+            IReadOnlyList<Note> notes, double maximumGapSeconds, DirectionRuntime runtime)
+        {
+            var proposed = AlternateHands(prepared, notes, maximumGapSeconds);
+            if (proposed.SequenceEqual(notes))
+                return notes;
+            var before = await ErrorLocations(notes).ConfigureAwait(false);
+            var after = await ErrorLocations(proposed).ConfigureAwait(false);
+            if (after.IsSubsetOf(before))
+                return proposed;
+
+            // A batch can mix compatible and incompatible changes. Keep
+            // individually verified swaps within the preview's search budget.
+            var accepted = notes.ToArray();
+            foreach (int index in Enumerable.Range(0, notes.Count)
+                .Where(index => notes[index] != proposed[index]).Take(16))
+            {
+                accepted[index] = proposed[index];
+                var revised = await ErrorLocations(accepted).ConfigureAwait(false);
+                if (revised.IsSubsetOf(before))
+                    before = revised;
+                else
+                    accepted[index] = notes[index];
+            }
+            return accepted;
+
+            async Task<HashSet<(double Beat, int Hand)>> ErrorLocations(IReadOnlyList<Note> candidate)
+            {
+                var level = prepared.Level;
+                var result = await PlacementParity.Audit(runtime, candidate, level.Gameplay.Bombs,
+                    Array.Empty<ParityReentry>(), level.Bpm, level.Clock.Seconds,
+                    level.Clock.Regions.Count > 1, CancellationToken.None).ConfigureAwait(false);
+                return result["issues"].AsArray().Where(issue => issue["status"].GetValue<string>() == "error")
+                    .Select(issue => (issue["beat"].GetValue<double>(), issue["hand"].GetValue<int>())).ToHashSet();
+            }
+        }
+
         internal static IReadOnlyList<Note> AlternateHands(PreparedTiming prepared, IReadOnlyList<Note> notes, double maximumGapSeconds)
         {
             if (maximumGapSeconds <= 0)

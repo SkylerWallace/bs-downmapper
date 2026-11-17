@@ -110,7 +110,7 @@ namespace BsDownmap.Engine
                     }
                     QueueFailureAlternatives(attempt, failure, directed, placementPlan);
                     if (repairEmptyDomains && !auditing)
-                        QueueGroupAlternatives(attempt, failure.Beat, failure.Notes);
+                        QueueGroupAlternatives(attempt, failure.Beat, failure.Notes, placementPlan);
                     continue;
                 }
                 var result = new DirectedPlacementResult(placed, report, settings, attempts.Sum());
@@ -174,13 +174,13 @@ namespace BsDownmap.Engine
                 }
             }
 
-            void QueueGroupAlternatives(Attempt attempt, double beat, IReadOnlyList<Note> candidates)
+            void QueueGroupAlternatives(Attempt attempt, double beat, IReadOnlyList<Note> candidates, PlacementPlan placementPlan)
             {
                 var hands = candidates.GroupBy(note => note.Hand).Select(group => group.ToArray()).ToArray();
                 if (hands.Any(hand => hand.Length > 1))
                 {
                     var shared = candidates.Select(note => (int)byId[note.Id].Note.Direction).Distinct().ToArray();
-                    if (candidates.Count == 3 && hands.Length == 2 && shared.Length == 1 && shared[0] is >= 0 and <= 7 &&
+                    if (hands.Length == 2 && shared.Length == 1 && shared[0] is >= 0 and <= 7 &&
                         candidates.Any(note => note.Direction != shared[0]))
                     {
                         var whole = Force(attempt.Exclusions, candidates, shared[0]);
@@ -194,8 +194,12 @@ namespace BsDownmap.Engine
                         if (authored.Length != 1 || authored[0] is < 0 or > 7)
                             return;
                         int[] opposites = { 1, 0, 3, 2, 7, 6, 5, 4 };
+                        var directions = new[] { authored[0], opposites[authored[0]] };
+                        if (placementPlan.Walls.Any(wall => wall.LegacyCrouch &&
+                            wall.Beat <= beat && beat < wall.Beat + wall.Duration))
+                            directions = directions.Concat(new[] { 0, 1, 2, 3 }).Distinct().ToArray();
                         exclusions = (from previous in exclusions
-                                      from direction in new[] { authored[0], opposites[authored[0]] }
+                                      from direction in directions
                                       let next = Force(previous, hand, direction)
                                       where next != null select next).ToList();
                     }

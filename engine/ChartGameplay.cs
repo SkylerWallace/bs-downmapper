@@ -8,7 +8,11 @@ namespace BsDownmap.Engine
 {
     public readonly record struct Note(int Id, double Beat, int Hand, double X, double Y, double Direction, double Angle);
     public readonly record struct Bomb(double Beat, double X, double Y);
-    public readonly record struct Wall(double Beat, double X, double Y, double Duration, double Width, double Height);
+    public readonly record struct Wall(double Beat, double X, double Y, double Duration, double Width, double Height,
+        bool LegacyCrouch = false)
+    {
+        internal double CollisionBottom => LegacyCrouch ? 1 : Y;
+    }
 
     public sealed partial class ChartGameplay
     {
@@ -35,7 +39,8 @@ namespace BsDownmap.Engine
                 throw new InvalidDataException($"Unsupported beatmap version {versionText}.");
             int version = versionText[0] - '0';
             if (Present(data["spawnRotations"]) || Present(data["rotationEvents"]) || Present(data["_waypoints"]) ||
-                Rows(data, "_events").Any(row => Number(row, "_type") is 14 or 15 or 100))
+                Rows(data, "_events").Any(row => Number(row, "_type") is 14 or 15 ||
+                    version != 2 && Number(row, "_type") == 100))
                 throw new InvalidDataException("Rotation events and waypoints are unsupported.");
             if (version != 2 && (Present(data["_BPMChanges"]) || Present((data["_customData"] as JsonObject)?["_BPMChanges"])))
                 throw new InvalidDataException("Legacy BPM metadata requires a version 2 chart.");
@@ -63,7 +68,7 @@ namespace BsDownmap.Engine
                     double type = Number(row, "_type");
                     if (type is not (0 or 1)) throw new InvalidDataException("Unsupported obstacle geometry.");
                     walls.Add(new Wall(Number(row, "_time"), Number(row, "_lineIndex"), type == 0 ? 0 : 2,
-                        Number(row, "_duration"), Number(row, "_width"), type == 0 ? 5 : 3));
+                        Number(row, "_duration"), Number(row, "_width"), type == 0 ? 5 : 3, LegacyCrouch: type == 1));
                 }
             }
             else

@@ -68,9 +68,13 @@ internal static class EditorPreview
             selected = await TimingParityRepair.RestoreAuthoredSwings(prepared, selected, runtime, adherence: adherence,
                 repairHandAssignments: request["repair-hand-assignments"]?.GetValue<bool>() == true);
             double alternation = StandardSong.Number(request["hand-alternation"] ?? profiles[target]["handAlternation"]);
-            if (double.IsFinite(alternation))
-                selected = TimingParityRepair.AlternateHands(prepared, selected, Math.Clamp(alternation, 0, 1.5));
-
+            double maximumGap = double.IsFinite(alternation) ? Math.Clamp(alternation, 0, 1.5) : 0;
+            bool comparePlacement = maximumGap > 0 && adherence >= 1 &&
+                request["skip-placed-timing-comparison"]?.GetValue<bool>() != true;
+            if (maximumGap > 0 && !comparePlacement)
+                selected = adherence >= 1
+                    ? await TimingParityRepair.AlternateHandsWhenParitySafe(prepared, selected, maximumGap, runtime)
+                    : TimingParityRepair.AlternateHands(prepared, selected, maximumGap);
             if (request["placement-hand-fallback"]?.GetValue<bool>() == true)
             {
                 var groups = NestedTimings.Group(original);
@@ -88,6 +92,21 @@ internal static class EditorPreview
                                 additions.Add(groups[index].Notes[0]);
                 } while (previousCount != kept.Count);
                 selected = selected.Concat(additions).OrderBy(note => note.Beat).ThenBy(note => note.Hand).ToArray();
+            }
+
+            if (comparePlacement)
+            {
+                progress?.Invoke(.48f, "Comparing placed rhythm proposals");
+                var profile = (JsonObject)profiles[target].DeepClone();
+                double defaultAdherence = StandardSong.Number(profile["parityAdherence"]);
+                var settings = request["placement-settings"] as JsonObject ??
+                    (request["placement-settings"] is JsonValue path ? ReadObject(path.GetValue<string>()) : null);
+                EditorGeneration.ApplySettings(profile, settings);
+                profile["parityAdherence"] = adherence;
+                var foundation = song.Read(request["source-difficulty"]?.GetValue<string>() ?? higher.Keys.First());
+                var (speed, _, halfJump) = EditorGeneration.JumpSettings(song, level.Bpm, target, null);
+                selected = await EditorTimingPlacement.Compare(prepared, selected, foundation, song.Read(higher.Keys.Last()),
+                    profile, defaultAdherence, maximumGap, speed, halfJump * 60 / level.Bpm, runtime, matchRepeats);
             }
 
             NativeReferencePlan CreatePlan()

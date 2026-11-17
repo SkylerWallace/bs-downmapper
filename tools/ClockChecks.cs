@@ -25,6 +25,15 @@ internal static class ClockChecks
         var events = ChartClock.Read(120, Json("""
             {"bpmEvents":[{"b":4,"m":60},{"b":4,"m":120},{"b":8,"m":60}]}
             """));
+        var editorTempoEvents = Json("""
+            {"_version":"2.6.0","_notes":[{"_time":5,"_type":0,"_lineIndex":0,"_lineLayer":0,"_cutDirection":1}],"_events":[
+                {"_type":100,"_time":4,"_floatValue":60},{"_type":0,"_time":5,"_floatValue":1}]}
+            """);
+        ChartGameplay.Read(editorTempoEvents);
+        Equal(3, ChartClock.Read(120, editorTempoEvents).Seconds(5));
+        Reject(() => ChartGameplay.Read(Json("""
+            {"_version":"2.6.0","_notes":[{"_time":5,"_type":0,"_lineIndex":0,"_lineLayer":0,"_cutDirection":1}],"_events":[{"_type":14,"_time":4}]}
+            """)));
         var regions = new[] { new BeatRegion(0, 0, .5), new BeatRegion(4, 2, .5), new BeatRegion(8, 4, 1) };
         var preview = ChartClock.FromRegions(regions);
         regions[0] = new BeatRegion(0, 0, 100); // Preview owns a snapshot, not caller storage.

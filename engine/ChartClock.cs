@@ -43,7 +43,11 @@ namespace BsDownmap.Engine
                 throw new InvalidDataException("Positive BPM required.");
             if (audioData != null)
                 return ReadAudio(audioData);
-            return WithEvents(bpm, Rows(chart, "bpmEvents").Select(row => (Number(row, "b"), Number(row, "m"))));
+            var events = Rows(chart, "bpmEvents").Select(row => (Number(row, "b"), Number(row, "m")));
+            if (chart["_version"]?.GetValue<string>().StartsWith("2.", StringComparison.Ordinal) == true)
+                events = events.Concat(Rows(chart, "_events").Where(row => Number(row, "_type") == 100)
+                    .Select(row => (Number(row, "_time"), Number(row, "_floatValue"))));
+            return WithEvents(bpm, events);
         }
 
         public static ChartClock ReadLegacyGrid(double bpm, JsonObject chart)

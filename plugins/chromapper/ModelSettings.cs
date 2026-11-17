@@ -109,13 +109,13 @@ namespace BsDownmap.ChroMapper
                                 save(new JSONNumber(double.Parse(value.ToString("G7", CultureInfo.InvariantCulture),
                                     CultureInfo.InvariantCulture))));
                             selectable = slider.Selectable;
-                            refresh = value => slider.SetValueWithoutNotify(value.AsFloat);
+                            refresh = value => CmuiCompatibility.SetValueWithoutNotify(slider, value.AsFloat);
                             break;
                         case "boolean":
                             var toggle = DialogLayout.Mount(dialog.AddComponent<ToggleComponent>(), slot);
                             toggle.WithLabel(label).OnChanged<ToggleComponent, bool>(value => save(new JSONBool(value)));
                             selectable = toggle.Selectable;
-                            refresh = value => toggle.SetValueWithoutNotify(value.AsBool);
+                            refresh = value => CmuiCompatibility.SetValueWithoutNotify(toggle, value.AsBool);
                             break;
                         default:
                             var options = spec["options"].Children.Select(option => option.Value).ToArray();
@@ -123,7 +123,7 @@ namespace BsDownmap.ChroMapper
                             dropdown.WithLabel(label).WithOptions(options);
                             dropdown.OnChanged<DropdownComponent, int>(index => save(new JSONString(options[index])));
                             selectable = dropdown.Selectable;
-                            refresh = value => dropdown.SetValueWithoutNotify(Array.IndexOf(options, value.Value));
+                            refresh = value => CmuiCompatibility.SetValueWithoutNotify(dropdown, Array.IndexOf(options, value.Value));
                             break;
                     }
                     if (!string.IsNullOrWhiteSpace(spec["description"].Value))

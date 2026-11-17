@@ -4,6 +4,40 @@ const fs = require("fs"),
   path = require("path"),
   assert = require("assert");
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bs-parity-tests-"));
+const { resetPhase } = require("./bomb_reset.cjs");
+const top = [{ time: 1, posX: 3, posY: 1 }, { time: 1, posX: 3, posY: 2 }];
+const bottom = [{ time: 1, posX: 0, posY: 0 }, { time: 1, posX: 0, posY: 1 }];
+const towardTop = { posX: 2, posY: 0, direction: 3 };
+const towardBottom = { posX: 1, posY: 0, direction: 2 };
+assert.equal(resetPhase([towardTop], top), "backhand");
+assert.equal(resetPhase([towardBottom], bottom), "forehand");
+assert.equal(resetPhase([towardTop], bottom), null);
+assert.equal(resetPhase([towardTop, towardBottom], [...bottom, ...top]), "forehand");
+assert.equal(resetPhase([towardTop, towardBottom], [...top, ...bottom]), "forehand");
+assert.equal(resetPhase([{ posX: 0, posY: 0, direction: 0 }], [
+  { time: 1, posX: 0, posY: 1 }, { time: 1, posX: 0, posY: 2 },
+]), null);
+const directionalAudit = [
+  {
+    previous: { x: 2, y: 0, d: 3 }, next: { x: 2, y: 0, d: 0 },
+    bombs: top, phase: "backhand",
+  },
+  {
+    previous: { x: 1, y: 0, d: 2 }, next: { x: 2, y: 0, d: 2 },
+    bombs: bottom, phase: "forehand",
+  },
+];
+for (const { previous, next, bombs, phase } of directionalAudit) {
+  const chart = {
+    version: "3.0.0",
+    colorNotes: [previous, next].map((note, i) => ({ ...note, b: 2 * i, c: 1, a: 0 })),
+    bombNotes: bombs.map(bomb => ({ b: bomb.time, x: bomb.posX, y: bomb.posY })),
+  };
+  const end = require("./check_parity.cjs").audit(chart, false, 100).trace.at(-1);
+  assert.equal(end.bombReset, phase);
+  assert.equal(end.swingState, phase);
+  assert.equal(end.status, "none");
+}
 function map(name, events, bombs = []) {
   const filename = path.join(dir, name + ".dat");
   fs.writeFileSync(
@@ -73,6 +107,13 @@ console.log(
 );
 // A relocated dot can change the parity of the later explicit cuts.
 const { audit, polish } = require("./check_parity.cjs");
+const bottomBombBeforeUpstroke = {
+  version: "3.0.0",
+  colorNotes: [0, 1].map(b => ({ b, c: 0, x: 1, y: 0, d: 0, a: 0 })),
+  bombNotes: [{ b: .5, x: 1, y: 0 }],
+};
+assert.equal(audit(bottomBombBeforeUpstroke, false, 120).errors, 1);
+assert.equal(audit(bottomBombBeforeUpstroke, false, 120, false, [{ hand: 0, beat: 1 }]).errors, 0);
 const dotSequence = (directions, moved) => ({
   version: "3.0.0",
   colorNotes: directions.map((d, index) => ({

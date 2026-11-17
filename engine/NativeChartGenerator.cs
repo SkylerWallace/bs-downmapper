@@ -19,7 +19,8 @@ namespace BsDownmap.Engine
             CancellationToken cancellation, Action checking = null, Action<PlacementDraft> draft = null,
             StandardLevel foundation = null, double defaultAdherence = 1, ISet<int> fixedOutsideWindow = null,
             Action<PlacementDeadEnd> blocked = null, bool tryHandsEarly = false,
-            Action<IReadOnlyList<Note>, JsonObject> audited = null)
+            Action<IReadOnlyList<Note>, JsonObject> audited = null, StandardLevel parityReference = null,
+            bool linkParityRepairs = false)
         {
             var level = rhythm.Level;
             var clock = level.Clock;
@@ -31,6 +32,11 @@ namespace BsDownmap.Engine
             var chartLinks = level.Gameplay.ReadLinks();
             var endpoints = pattern.Endpoints;
             var gestures = MappingIntent.Detect(seeds, bombs, clock, anchors);
+            var resetStarts = gestures.Returns.ToDictionary(reset => reset.Second.Id, reset => reset.First.Beat);
+            var resetReentries = gestures.Returns.Select(reset =>
+                new ParityReentry(reset.Second.Hand, reset.Second.Beat)).ToArray();
+            var projectedResets = gestures.Returns.Select(reset =>
+                new ProjectedReset(reset.Second.Hand, reset.First.Beat, reset.Second.Beat, reset.Second.Direction)).ToHashSet();
             var (sections, streams) = PatternFoundation.Sections(seeds,
                 (int)Number(profile, "densityWindowBeats"), (int)Number(profile, "regularStreamMinimumNotes"),
                 Number(profile, "regularStreamMaximumGapBeats"), clock.Gap);
@@ -40,12 +46,13 @@ namespace BsDownmap.Engine
             var arrows = new Dictionary<int, int[]>();
             var targetDirections = new Dictionary<int, int>();
             var flexiblePairs = new HashSet<int>();
+            var adherence = Number(profile, "parityAdherence", Number(profile["drumming"], "parityAdherence", 1));
             foreach (var pair in gestures.Pairs)
             {
                 int direction = pair.First.Direction is 1 or 6 or 7 ? 1 : 0;
                 double x = pair.First.X, y = Math.Min(pair.First.Y, 1);
                 double limit = Math.Max(MotionVisibility.Reach(pair.First), MotionVisibility.Reach(pair.Second));
-                bool flexible = Flag(profile, "flexiblePairedPhase");
+                bool flexible = adherence >= 1 || Flag(profile, "flexiblePairedPhase");
                 foreach (var note in new[] { pair.First, pair.Second })
                 {
                     var intent = new PlacementIntent("paired_hand_call_response", x, y);
@@ -107,7 +114,6 @@ namespace BsDownmap.Engine
             var parityPositions = new Dictionary<int, Note>();
             IReadOnlyList<Note> lastAudited = null;
             var refinedParityWindows = new HashSet<double>();
-            var adherence = Number(profile, "parityAdherence", Number(profile["drumming"], "parityAdherence", 1));
             var authored = foundation ?? level;
             var original = await PlacementParity.Audit(runtime, authored.Gameplay.Notes, authored.Gameplay.Bombs,
                 Array.Empty<ParityReentry>(), level.Bpm, clock.Seconds, VariableTempo(), cancellation).ConfigureAwait(false);
@@ -116,11 +122,30 @@ namespace BsDownmap.Engine
             bool localRepair = adherence >= .75 && draft != null;
             int feedbackPasses = localRepair ? 0 : (int)Math.Round(4 * adherence);
             var inheritedErrors = Errors(original);
+            var reference = parityReference ?? authored;
+            var referenceAudit = ReferenceEquals(reference, authored) ? original :
+                await PlacementParity.Audit(runtime, reference.Gameplay.Notes, reference.Gameplay.Bombs,
+                    Array.Empty<ParityReentry>(), reference.Bpm, reference.Clock.Seconds,
+                    reference.Clock.Regions.Count != 1 || reference.Clock.Regions[0].SecondsPerBeat != 60 / reference.Bpm,
+                    cancellation).ConfigureAwait(false);
+            var sourceStates = PlacementParity.States(referenceAudit, "swingState");
+            var repairLinks = new Lazy<ILookup<double, double>>(() =>
+            {
+                if (!linkParityRepairs)
+                    return Array.Empty<double>().ToLookup(beat => beat);
+                var groups = NestedTimings.Group(rhythm.Context.Notes);
+                var repeats = TimelineRepeats.Find(level, rhythm.Context.Notes);
+                return repeats.Sections.Concat(repeats.Subsections.SelectMany(scope => scope.Groups))
+                    .SelectMany(section => section.Links)
+                    .SelectMany(link => link.SelectMany(index => link.Select(other =>
+                        (Beat: groups[index].Beat, Other: groups[other].Beat))))
+                    .Distinct().ToLookup(pair => pair.Beat, pair => pair.Other);
+            });
             var plannerParity = (JsonArray)original["issues"].DeepClone();
             JsonArray seedIssues = null;
             if (draft != null || fixedOutsideWindow != null)
             {
-                var seedAudit = await PlacementParity.Audit(runtime, seeds, bombs, Array.Empty<ParityReentry>(),
+                var seedAudit = await PlacementParity.Audit(runtime, seeds, bombs, resetReentries,
                     level.Bpm, clock.Seconds, VariableTempo(), cancellation).ConfigureAwait(false);
                 seedIssues = seedAudit["issues"].AsArray();
                 draft?.Invoke(new PlacementDraft(seeds, released.ToHashSet(), seedAudit));
@@ -168,7 +193,7 @@ namespace BsDownmap.Engine
                     async Task<IReadOnlyList<Note>> Validate(IReadOnlyList<Note> candidate, JsonObject report, CancellationToken token)
                     {
                         checking?.Invoke();
-                        var audit = await PlacementParity.Audit(runtime, candidate, bombs, Array.Empty<ParityReentry>(),
+                        var audit = await PlacementParity.Audit(runtime, candidate, bombs, resetReentries,
                             level.Bpm, clock.Seconds, VariableTempo(), token).ConfigureAwait(false);
                         int outstanding = NewErrors(audit);
                         if (localRepair && outstanding > 0)
@@ -179,13 +204,16 @@ namespace BsDownmap.Engine
                                     group.Any(note => anchors.Contains(note.Id) || entries.Contains(note.Id) || cues.ContainsKey(note.Id)) ? Array.Empty<int>() :
                                     group.Select(note => domains[note.Id].Directions.AsEnumerable())
                                         .Aggregate((a, b) => a.Intersect(b)).ToArray());
-                            var proposal = await PlacementParity.Audit(runtime, candidate, bombs, Array.Empty<ParityReentry>(),
+                            var proposal = await PlacementParity.Audit(runtime, candidate, bombs, resetReentries,
                                 level.Bpm, clock.Seconds, VariableTempo(), token, domainsBySwing).ConfigureAwait(false);
                             var changes = proposal["edits"].AsArray().ToDictionary(item =>
                                 (StandardSong.Number(item["beat"]), item["hand"].GetValue<int>()),
                                 item => item["after"][0].GetValue<int>());
-                            foreach (var batch in RepairBatches(changes))
+                            foreach (var patch in LinkedRepairBatches())
                             {
+                                var batch = patch.ToDictionary(item =>
+                                    (StandardSong.Number(item["beat"]), item["hand"].GetValue<int>()),
+                                    item => item["after"][0].GetValue<int>());
                                 var edited = candidate.Select(note => batch.TryGetValue((note.Beat, note.Hand), out int direction) &&
                                     direction != note.Direction ? note with { Direction = direction, Angle = 0 } : note).ToArray();
                                 IReadOnlyList<Note> revised = null;
@@ -200,7 +228,7 @@ namespace BsDownmap.Engine
                                 catch (PlacementDeadEnd) { /* Keep the original placement if the proposed arrows cannot be placed. */ }
                                 if (revised != null)
                                 {
-                                    var revisedAudit = await PlacementParity.Audit(runtime, revised, bombs, Array.Empty<ParityReentry>(),
+                                    var revisedAudit = await PlacementParity.Audit(runtime, revised, bombs, resetReentries,
                                         level.Bpm, clock.Seconds, VariableTempo(), token).ConfigureAwait(false);
                                     var oldErrors = Errors(audit);
                                     var newErrors = Errors(revisedAudit);
@@ -212,6 +240,24 @@ namespace BsDownmap.Engine
                                         audit = revisedAudit;
                                         outstanding = remaining;
                                     }
+                                }
+                            }
+                            IEnumerable<JsonNode[]> LinkedRepairBatches()
+                            {
+                                foreach (var batch in RepairBatches(changes))
+                                {
+                                    var local = batch.Select(pair => (JsonNode)new JsonObject
+                                    {
+                                        ["beat"] = pair.Key.Beat, ["hand"] = pair.Key.Hand,
+                                        ["after"] = new JsonArray(JsonValue.Create(pair.Value)),
+                                    }).ToArray();
+                                    int before = outstanding;
+                                    var linked = PlacementParity.ExpandLinkedPatch(local, repairLinks.Value,
+                                        domainsBySwing, PlacementParity.States(audit, "state"));
+                                    if (linked != null)
+                                        yield return linked;
+                                    if (outstanding == before)
+                                        yield return local;
                                 }
                             }
                         }
@@ -232,7 +278,7 @@ namespace BsDownmap.Engine
                         double gap = Number(profile["drumming"], "minimumGapSeconds", .95);
                         try
                         {
-                            PlacementParity.Validate(candidate, bombs, new HashSet<ProjectedReset>(), gaps, sparse, gap,
+                            PlacementParity.Validate(candidate, bombs, projectedResets, gaps, sparse, gap,
                                 Number(profile["drumming"], "sparseMinimumGapSeconds", gap), report, original, audit, adherence);
                         }
                         catch (PlacementDeadEnd) when (draft != null)
@@ -402,7 +448,7 @@ namespace BsDownmap.Engine
                 {
                     var notes = attack.Notes;
                     double direction = notes[0].Direction;
-                    if (notes.Count != 3 || notes.Select(note => note.Hand).Distinct().Count() != 2 ||
+                    if (notes.Count < 3 || notes.Select(note => note.Hand).Distinct().Count() != 2 ||
                         direction is < 0 or > 7 || notes.Any(note => note.Direction != direction ||
                         note.Angle != 0 || anchors.Contains(note.Id) || cues.ContainsKey(note.Id)))
                         continue;
@@ -508,6 +554,8 @@ namespace BsDownmap.Engine
                         clock.Gap(wall.Beat, wall.Beat + wall.Duration) >= controls["resetCueMinimumCrouchSeconds"] &&
                         wall.Beat <= note.Beat && clock.Gap(wall.Beat + wall.Duration, note.Beat) <= controls["crouchRecoverySeconds"]),
                 };
+                if (sourceStates.TryGetValue((Math.Round(note.Beat, 4), note.Hand), out string sourceState))
+                    value["sourceParityState"] = sourceState;
                 if (parallel.TryGetValue(note.Id, out int parallelDirection))
                     value["parallelDoubleDirection"] = parallelDirection;
                 if (cue != null)
@@ -523,6 +571,8 @@ namespace BsDownmap.Engine
                         intent["flexiblePhase"] = true;
                     if (cue.PreservePosition)
                         intent["preservePosition"] = true;
+                    if (resetStarts.TryGetValue(note.Id, out double resetStart))
+                        intent["resetFromBeat"] = resetStart;
                     value["intent"] = intent;
                 }
                 else if (!entries.Contains(note.Id))

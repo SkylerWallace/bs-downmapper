@@ -113,6 +113,23 @@ namespace BsDownmap.Engine
             return gap;
         }
 
+        internal static (double Left, double Right) WallStartInterior(double beat, IReadOnlyList<Wall> walls)
+        {
+            double left = double.NegativeInfinity, right = double.PositiveInfinity;
+            foreach (var wall in walls)
+            {
+                if (wall.Y != 0 || wall.Height < 3 || wall.Width <= 0 || wall.Width >= 4 ||
+                    wall.Duration <= 0 || Math.Abs(wall.Beat - beat) > .0001)
+                    continue;
+                double center = wall.X + (wall.Width - 1) / 2;
+                if (center < 1.5)
+                    left = Math.Max(left, wall.X);
+                else if (center > 1.5)
+                    right = Math.Min(right, wall.X + wall.Width);
+            }
+            return (left, right);
+        }
+
         public static IReadOnlyDictionary<int, double> RepairWindows(
             IReadOnlyList<Note> notes, IReadOnlyList<double> centers, Func<double, double, double> gapSeconds)
         {

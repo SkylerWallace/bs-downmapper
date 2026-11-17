@@ -118,7 +118,7 @@ namespace BsDownmap.Engine
             var start = note.Direction == 8 ? center : Cut(note, .75).Start;
             double enter = 0, exit = 1;
             return Clip(start.X, center.X - start.X, wall.X - .5, wall.X + wall.Width - .5) &&
-                Clip(start.Y, center.Y - start.Y, wall.Y - .5, wall.Y + wall.Height - .5);
+                Clip(start.Y, center.Y - start.Y, wall.CollisionBottom - .5, wall.Y + wall.Height - .5);
 
             bool Clip(double origin, double delta, double low, double high)
             {
@@ -140,7 +140,7 @@ namespace BsDownmap.Engine
                 if (wall.Beat <= note.Beat &&
                     seconds(note.Beat) - seconds(wall.Beat + wall.Duration) < recoverySeconds &&
                     wall.X <= note.X && note.X < wall.X + wall.Width &&
-                    wall.Y <= note.Y && note.Y < wall.Y + wall.Height)
+                    wall.CollisionBottom <= note.Y && note.Y < wall.Y + wall.Height)
                     yield return index;
             }
         }

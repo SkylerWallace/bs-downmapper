@@ -14,6 +14,7 @@ const { Parity } = require(
 const swing = require(
   "../.tools/parity-runtime/node_modules/bsmap/script/extensions/swing/mod.js",
 );
+const { parityBombContext, applyReset } = require("./bomb_reset.cjs");
 function audit(
   raw,
   repair = false,
@@ -28,7 +29,7 @@ function audit(
   const notes = map.difficulty.colorNotes,
     bombs = map.difficulty.bombNotes;
   const tp = new TimeProcessor(bpm, map.difficulty.bpmEvents || []);
-  const states = [0, 1].map((c) => new Parity(notes, bombs, c, 90, 45, 90));
+  const states = [0, 1].map((c) => new Parity(notes, bombs.filter(bomb => bomb.posY !== 0), c, 90, 45, 90));
   const resetStarts = new Set(
     reentries.map((cue) => cue.hand + "/" + cue.beat),
   );
@@ -45,19 +46,22 @@ function audit(
     const ctx = contexts[c];
     if (!ctx.length) return;
     const start = ctx[0].time,
-      previous = previousSwing[c]?.time;
-    let bctx = bombs.filter(
+      previous = previousSwing[c]?.notes.at(-1)?.time;
+    const bctx = bombs.filter(
       (b) =>
         b.time <= start + 0.00001 &&
         (previous === undefined || b.time > previous + 0.00001),
     );
     if (resetStarts.has(c + "/" + ctx[0].time)) {
       states[c] = new Parity(ctx, [], c, 90, 45, 90);
-      bctx = [];
       appliedRestedReentries++;
     }
-    const state = states[c],
-      before = state.check(ctx, bctx),
+    const state = states[c], incoming = { ...state };
+    const elapsed = previous === undefined ? Infinity : tp.toRealTime(start) - tp.toRealTime(previous);
+    const { phase: bombPhase, bombs: parityBombs } = parityBombContext(previousSwing[c]?.notes, bctx, ctx, elapsed);
+    const context = resetStarts.has(c + "/" + start) ? [] : parityBombs;
+    applyReset(state, bombPhase);
+    const before = state.check(ctx, context),
       original = ctx.map((n) => n.direction);
     if (repair && (before !== "none" || preferCardinal)) {
       const candidates = [];
@@ -70,7 +74,7 @@ function audit(
             Math.abs(first.posY - prev.posY) >= 1));
       for (let d = 0; d < 8; d++) {
         ctx.forEach((n) => (n.direction = d));
-        const status = state.check(ctx, bctx);
+        const status = state.check(ctx, context);
         const distance = original.reduce(
           (s, x) =>
             s +
@@ -104,8 +108,8 @@ function audit(
           });
       }
     }
-    const status = state.check(ctx, bctx);
-    checkpoints?.[c].push({ notes: ctx, bombs: bctx, state: { ...state },
+    const status = state.check(ctx, context);
+    checkpoints?.[c].push({ notes: ctx, bombs: bctx, state: { ...state }, incoming,
       reset: resetStarts.has(c + "/" + start), status });
     if (status !== "none")
       issues.push({
@@ -114,19 +118,24 @@ function audit(
         status,
         directions: ctx.map((n) => n.direction),
       });
-    trace.push({
+    const entry = {
       beat: ctx[0].time,
       hand: c,
       state: state.state,
       rotation: state.rotation,
       status,
       count: ctx.length,
-    });
-    state.next(ctx, bctx);
+    };
+    if (bombPhase) entry.bombReset = bombPhase;
+    state.next(ctx, context);
+    if (status !== "error")
+      entry.swingState = state.state;
+    trace.push(entry);
     previousSwing[c] = {
       time: ctx[0].time,
       posX: ctx[0].posX,
       posY: ctx[0].posY,
+      notes: ctx,
     };
   }
   for (const n of events) {
@@ -296,7 +305,7 @@ function polish(chart, bpm, reentries, domains) {
     // The initial state is inferred from the opening notes. Keep those fixed.
     if (!Number.isFinite(first) || first === 0) return null;
     const entries = [];
-    let state = Object.assign(Object.create(Parity.prototype), swings[first].state);
+    let state = Object.assign(Object.create(Parity.prototype), swings[first].incoming);
     let previous = swings[first - 1].notes;
     let cleared = 0;
     for (let i = first; i <= Math.min(last + 8, swings.length); i++) {
@@ -315,17 +324,21 @@ function polish(chart, bpm, reentries, domains) {
         context.push(note);
         prior = note;
       }
+      const incoming = { ...state };
+      const elapsed = tp.toRealTime(notes[0].time) - tp.toRealTime(previous.at(-1).time);
+      const { phase, bombs } = parityBombContext(previous, original.bombs, notes, elapsed);
+      applyReset(state, phase);
       if (i > last && (original.reset ||
           state.state === original.state.state && state.rotation === original.state.rotation))
         return cleared ? { start: first, entries, cleared } : null;
       if (original.reset) return null;
-      const status = state.check(notes, original.bombs);
+      const status = state.check(notes, bombs);
       const inherited = domains[key(notes[0].time, hand)] === null;
       if (inherited && status !== original.status ||
           status === "error" && original.status !== "error") return null;
       if (!inherited && original.status === "error" && status !== "error") cleared++;
-      entries.push({ ...original, notes, status, state: { ...state } });
-      state.next(notes, original.bombs);
+      entries.push({ ...original, notes, status, state: { ...state }, incoming });
+      state.next(notes, bombs);
       previous = notes;
     }
     return null;

@@ -6,6 +6,24 @@
 
 ## Quick checks
 
+The editor host's `editor-parity-preview` operation accepts a saved placement draft. Pass the map folder as `source`, the runtime root as `engine`, and a Standard `difficulty`. An optional `focus` prioritizes an error and a double restoration beat. Hand values are 0 for left and 1 for right.
+
+```powershell
+$request = @{
+    engine = (Get-Location).Path
+    source = (Resolve-Path 'maps/generated/move-parity-ab-100/new/1e1e5').Path
+    difficulty = 'Expert'
+    focus = @{ errorBeat = 264.75; hand = 1; restoreBeat = 263 }
+}
+$request | ConvertTo-Json | dotnet .tools/editor-host-checks/bin/BsDownmap.Engine.Host/release/BsDownmap.Engine.Host.dll editor-parity-preview
+```
+
+The response includes final proposed notes, tried patches and their costs, linked occurrences, and newly introduced errors. The preview uses 100% adherence. It can add a hand to an existing beat or restore an eligible beat from the higher charts.
+
+Pass `target-note-fraction` to use the intended timing budget. The preview applies the fraction to the highest saved Standard chart above the target. Without an override, it uses the midpoint of the target profile's note-ratio range. The two ratio costs reward edits that move the note count toward this budget or move the left-hand share toward the immediate higher chart's share. For linked edits, both costs use the full patch, including mirrored copies.
+
+After nearby beats-preserving repairs, the preview checks distant opposite-hand singles back to the previous swing of the error hand. Timing restoration is the last pass. It uses the immediate higher chart's verified marker links, restores missing eligible occurrences together, and keeps a proposal only if its follow-up repairs clear any new errors. Set `restore-linked-timings` to `false` to disable this last pass.
+
 Run these commands from the project root with the Python environment described in [contributing](contributing.md).
 
 ```powershell

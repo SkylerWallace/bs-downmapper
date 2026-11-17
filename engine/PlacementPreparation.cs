@@ -20,6 +20,7 @@ namespace BsDownmap.Engine
             ["bombSwingClearanceMeters"] = .6, ["oppositeInlineSeconds"] = 0, ["sameHandInlineSeconds"] = 0,
             ["topRowSpacingSeconds"] = .55, ["topPalmSpacingSeconds"] = 1, ["topDotSpacingSeconds"] = .9,
             ["crouchRecoverySeconds"] = .85, ["centerVisionWindowSeconds"] = .75,
+            ["outsideWallStartCost"] = 4,
             ["noteBombHeadClearanceMeters"] = .45, ["reachSlackMeters"] = .2, ["sourcePositionCost"] = 1,
             ["recoveryResetSeconds"] = .7, ["recoveryResetCost"] = 6, ["resetCueMinimumCrouchSeconds"] = .2,
         };

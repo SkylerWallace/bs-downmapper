@@ -480,7 +480,7 @@ namespace BsDownmap.ChroMapper
         private void SetSubdivision(int value)
         {
             subdivision = Math.Max(1, value);
-            precision.SetValueWithoutNotify(subdivision.ToString());
+            CmuiCompatibility.SetValueWithoutNotify(precision, subdivision.ToString());
             timelineDirty = true;
         }
 
@@ -832,7 +832,7 @@ namespace BsDownmap.ChroMapper
             restore = layout.Mount(dialog.AddComponent<ButtonComponent>().WithLabel("Restore defaults").OnClick(() =>
             {
                 foreach (var setting in current)
-                    sliders[setting.Key].SetValueWithoutNotify(setting.Default);
+                    CmuiCompatibility.SetValueWithoutNotify(sliders[setting.Key], setting.Default);
                 restoreModels();
             }), "RestoreDefaults");
         }
@@ -846,7 +846,7 @@ namespace BsDownmap.ChroMapper
             {
                 var slider = sliders[setting.Key];
                 slider.WithLabel(setting.Label).WithSliderParams(setting.Min, setting.Max, .01f);
-                slider.SetValueWithoutNotify(setting.Value);
+                CmuiCompatibility.SetValueWithoutNotify(slider, setting.Value);
                 SettingHint.ForSlider(slider).Hint = setting.Hint;
                 layout.Slot(setting.Key).gameObject.SetActive(true);
             }

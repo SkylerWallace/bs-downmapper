@@ -212,6 +212,8 @@ namespace BsDownmap.Engine
                     if (time > timed.End || time < timed.Start - approachSeconds)
                         continue;
                     var wall = timed.Wall;
+                    // Legacy crouch walls extend into the middle row for swing clearance.
+                    // Visibility follows the authored wall geometry.
                     var low = new Vector((wall.X - 2) * CellMeters, BottomRow + (wall.Y - .5) * CellMeters,
                         Math.Max(.01, HitPlane + jumpSpeed * (timed.Start - time)));
                     var high = new Vector((wall.X + wall.Width - 2) * CellMeters,

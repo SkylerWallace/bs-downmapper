@@ -65,6 +65,10 @@ internal static class EditorGeneration
             selectionRequest["difficulty"] = target.Difficulty;
             selectionRequest["rhythm-mode"] = mode;
             selectionRequest["parity-adherence"] = profile["parityAdherence"]?.DeepClone();
+            selectionRequest["source-difficulty"] = target.Foundation;
+            selectionRequest["placement-settings"] = entry["settings"]?.DeepClone();
+            if (entry["patternModel"] != null)
+                selectionRequest["skip-placed-timing-comparison"] = true;
             selectionRequest["hand-alternation"] = entry["handAlternation"]?.DeepClone() ?? profile["handAlternation"]?.DeepClone();
             if (entry["rhythm"] != null) selectionRequest["rhythm-difficulty"] = entry["rhythm"].DeepClone();
             if (entry["targetNoteFraction"] != null)
@@ -129,6 +133,10 @@ internal static class EditorGeneration
 
             Report(.27f, "Planning patterns");
             var foundation = originalSong.Read(target.Foundation);
+            var higherDifficulty = TimingPreparation.Standard.TakeWhile(rank => rank != target.Difficulty)
+                .LastOrDefault(saved.ContainsKey);
+            var parityReference = higherDifficulty == null ? foundation : stagedSong.Read(higherDifficulty);
+            var linkParityRepairs = entry["rhythmLinks"]?.GetValue<bool>() != false;
             var pattern = PatternPreparation.Prepare(foundation, prepared, approved);
             IReadOnlyList<Note> seeds = pattern.Seeds.Select(seed => seed.Note).ToArray();
             if (entry["patternModel"] is JsonValue model)
@@ -205,7 +213,8 @@ internal static class EditorGeneration
                         if (lastBlocker == null || lastBlocker.Reason == "No geometric direction domain" ||
                             failure.Reason == "No joint geometry")
                             lastBlocker = failure;
-                    }, tryHandsEarly: tryHandsEarly, audited: RecordAudit);
+                    }, tryHandsEarly: tryHandsEarly, audited: RecordAudit, parityReference: parityReference,
+                    linkParityRepairs: linkParityRepairs);
             }
             catch (Exception error) when (error is PlacementDeadEnd or DirectionPathFailure ||
                 error is OperationCanceledException && draft != null && repairBudget.IsCancellationRequested && !token.IsCancellationRequested)
@@ -346,7 +355,7 @@ internal static class EditorGeneration
                             {
                                 var result = await NativeChartGenerator.Generate(prepared, revised,
                                     trialSeeds, profile, speed,
-                                    halfJump * 60 / prepared.Level.Bpm, runtime, trial.Token, foundation: foundation,
+                                    halfJump * 60 / prepared.Level.Bpm, runtime, trial.Token, foundation: foundation, parityReference: parityReference,
                                     defaultAdherence: defaultAdherence, tryHandsEarly: true, fixedOutsideWindow: fixedOutside,
                                     draft: candidate =>
                                     {
@@ -587,7 +596,7 @@ internal static class EditorGeneration
                                             if (sawSeeds) placed = candidate;
                                             sawSeeds = true;
                                         },
-                                        foundation: foundation, defaultAdherence: defaultAdherence,
+                                        foundation: foundation, defaultAdherence: defaultAdherence, parityReference: parityReference,
                                         fixedOutsideWindow: pinned, audited: RecordAudit);
                                 }
                                 catch (OperationCanceledException) when (quickTrial?.IsCancellationRequested == true &&
@@ -713,7 +722,7 @@ internal static class EditorGeneration
 
     internal sealed record DraftFinding(double Beat, string Hand, string Status, string Reason = null);
 
-    private static (double Speed, double Offset, double HalfJump) JumpSettings(StandardSong song, double bpm,
+    internal static (double Speed, double Offset, double HalfJump) JumpSettings(StandardSong song, double bpm,
         string target, JsonObject supplied)
     {
         double reference = double.NaN;
@@ -743,7 +752,7 @@ internal static class EditorGeneration
         return (speed, offset, half);
     }
 
-    private static void ApplySettings(JsonObject profile, JsonObject settings)
+    internal static void ApplySettings(JsonObject profile, JsonObject settings)
     {
         if (settings == null)
             return;

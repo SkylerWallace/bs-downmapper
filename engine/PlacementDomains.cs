@@ -84,6 +84,7 @@ namespace BsDownmap.Engine
             var controls = context.Placement.Controls;
             var sourceBombs = SwingClearance.BombClearances(source, context.NearbyBombs, seconds, domain.Bpm);
             var sourceWalls = SwingClearance.WallConflicts(source, context.Walls, seconds, domain.WallClearance).ToHashSet();
+            var wallInterior = PlacementPolicy.WallStartInterior(note.Beat, context.Walls);
             bool reversedCross = !OwnSide(source) && source.Direction is 2 or 3 &&
                 note.Direction is 2 or 3 && source.Direction != note.Direction;
             for (int x = 0; x < 4; x++)
@@ -118,6 +119,8 @@ namespace BsDownmap.Engine
 
                 double shapeCost = PlacementPolicy.Preference(candidate, source, null, intent, context.Placement,
                     bombVisibility(candidate)) + 5 * Math.Max(0, candidateReach - domain.ReachLimit);
+                if (x < wallInterior.Left || x >= wallInterior.Right)
+                    shapeCost += controls.GetValueOrDefault("outsideWallStartCost");
                 if (candidate.Y == 2 && controls.GetValueOrDefault("softTopRowSpacing") != 0)
                 {
                     double spacing = controls[candidate.Direction switch
