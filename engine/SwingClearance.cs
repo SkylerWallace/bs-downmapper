@@ -116,7 +116,10 @@ namespace BsDownmap.Engine
 
         internal static bool BlocksWallApproach(Note note, Wall wall)
         {
-            if (note.Beat < wall.Beat || note.Beat >= wall.Beat + wall.Duration)
+            // Independently serialized note and obstacle beats can differ by a few ULPs.
+            // Treat their leading faces as simultaneous within the chart timing tolerance.
+            if (wall.Duration <= 0 || note.Beat < wall.Beat - .0001 ||
+                note.Beat >= wall.Beat + wall.Duration)
                 return false;
             var center = new Point(note.X, note.Y);
             var start = note.Direction == 8 ? center : Cut(note, .75).Start;

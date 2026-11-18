@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -16,6 +17,9 @@ namespace BsDownmap.Engine
 
         private readonly string executable;
         private readonly string dispatch;
+        private readonly Dictionary<(string Task, string Input), string> results = new();
+        private readonly Queue<(string Task, string Input)> resultOrder = new();
+        private readonly object cacheLock = new();
 
         internal DirectionRuntime(string runtimeDirectory)
         {
@@ -39,6 +43,11 @@ namespace BsDownmap.Engine
         private async Task<JsonObject> Run(string task, JsonObject input, CancellationToken cancellation)
         {
             cancellation.ThrowIfCancellationRequested();
+            string serialized = input.ToJsonString();
+            var key = (task, serialized);
+            lock (cacheLock)
+                if (results.TryGetValue(key, out string cached))
+                    return JsonNode.Parse(cached).AsObject();
             if (!File.Exists(executable) || !File.Exists(dispatch))
                 throw new FileNotFoundException("The bundled direction runtime is missing.", executable);
 
@@ -68,7 +77,7 @@ namespace BsDownmap.Engine
             IOException inputError = null;
             try
             {
-                await process.StandardInput.WriteAsync(input.ToJsonString()).ConfigureAwait(false);
+                await process.StandardInput.WriteAsync(serialized).ConfigureAwait(false);
             }
             catch (IOException error)
             {
@@ -98,7 +107,20 @@ namespace BsDownmap.Engine
                 throw new IOException("Could not send input to the direction runtime.", inputError);
             try
             {
-                return JsonNode.Parse(stdout) as JsonObject ?? throw new InvalidDataException("Expected a direction result object.");
+                var result = JsonNode.Parse(stdout) as JsonObject ??
+                    throw new InvalidDataException("Expected a direction result object.");
+                cancellation.ThrowIfCancellationRequested();
+                lock (cacheLock)
+                {
+                    if (!results.ContainsKey(key))
+                    {
+                        if (results.Count >= 32)
+                            results.Remove(resultOrder.Dequeue());
+                        results.Add(key, stdout);
+                        resultOrder.Enqueue(key);
+                    }
+                }
+                return result;
             }
             #if CHROMAPPER
             catch (Newtonsoft.Json.JsonException error)

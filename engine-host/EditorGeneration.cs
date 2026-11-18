@@ -519,8 +519,7 @@ internal static class EditorGeneration
                             {
                                 screened++;
                                 var findings = Errors(await Audit(option.Notes, level.Gameplay.Bombs, searchToken));
-                                if ((wide || !findings.Contains(finding)) && findings.IsSubsetOf(previousRaw) &&
-                                    previousRaw.Where(inherited.Contains).All(findings.Contains))
+                                if (wide || !findings.Contains(finding) || option.EditCount == 1)
                                 {
                                     options.Add((option, findings.Count(previous.Contains)));
                                     if (wide && !findings.Contains(finding) &&

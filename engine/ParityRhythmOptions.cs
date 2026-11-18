@@ -137,7 +137,7 @@ namespace BsDownmap.Engine
             int nextId = Math.Max(level.Gameplay.Notes.Max(note => note.Id), placed.Max(note => note.Id));
             var edits = new List<Edit>();
             var neighborhood = groups.Where(group => group.Beat < beat).TakeLast(windowRadius)
-                .Concat(groups.Where(group => group.Beat == beat))
+                .Concat(groups.Where(group => Math.Abs(group.Beat - beat) <= .0001))
                 .Concat(groups.Where(group => group.Beat > beat).Take(windowRadius)).ToArray();
             for (int index = 0; index < neighborhood.Length; index++)
             {
@@ -153,9 +153,7 @@ namespace BsDownmap.Engine
                     // Keep the original attack and let placement check the additional swing.
                     edits.Add(new Edit(group.Beat, null, setup, .75 + Math.Abs(clock.Gap(beat, group.Beat))));
                 }
-                if (group.Notes.Any(note => protectedIds.Contains(note.Id)) ||
-                    placed.Any(note => note.Beat >= start && note.Beat <= end && resetIds.Contains(note.Id)) ||
-                    level.Gameplay.Bombs.Any(bomb => bomb.Beat >= start && bomb.Beat <= end))
+                if (group.Notes.Any(note => protectedIds.Contains(note.Id) || resetIds.Contains(note.Id)))
                     continue;
                 double cost = neighborhood.Count(other =>
                     other.Beat > start && other.Beat <= end) * .20 +

@@ -28,8 +28,8 @@
     "amount": 0.25
   },
   "geometry": {
-    "height": 0.4,
-    "width": 0.5,
+    "height": 0.45,
+    "width": 0.60,
     "crossover": 0.35,
     "crossoverReturnDepth": 1,
     "compactDeepPairedCells": true,

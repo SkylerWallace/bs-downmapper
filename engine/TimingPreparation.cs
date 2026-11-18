@@ -85,7 +85,8 @@ namespace BsDownmap.Engine
         }
 
         public static IReadOnlyList<Note> Select(PreparedTiming source, NativeReferencePlan reference,
-            string target, IEnumerable<double> required, double? fraction = null)
+            string target, IEnumerable<double> required, double? fraction = null,
+            IReadOnlyList<Note> immediateHigher = null, bool balanceHands = true)
         {
             bool referenceSource = string.Equals(source.Level.Filename, reference.Level.Filename, StringComparison.Ordinal);
             int budget = reference.Plan.Budgets[target];
@@ -94,9 +95,18 @@ namespace BsDownmap.Engine
             var mandatory = source.Context.ProtectedIds.ToHashSet();
             if (referenceSource)
                 mandatory.UnionWith(source.Context.Notes.Where(note => reference.Mandatory.Contains(note.Id)).Select(note => note.Id));
-            return NestedTimings.Select(reference.Level.Gameplay.Notes, reference.Plan.Priority, source.Context.Notes,
-                budget, mandatory, required, referenceSource);
+            var highest = reference.Level.Gameplay.Notes;
+            double leftShare = (LeftShare(immediateHigher ?? highest) + LeftShare(highest)) / 2;
+            var selected = NestedTimings.Select(highest, reference.Plan.Priority, source.Context.Notes,
+                budget, mandatory, required, referenceSource, balanceHands ? leftShare : null);
+            if (balanceHands && (selected.Count > budget || Environment.GetEnvironmentVariable("BS_DOWNMAP_BENCHMARK_PARITY") == "1"))
+                Console.Error.WriteLine($"{target} timing budget: requested {budget}, selected {selected.Count}; " +
+                    $"protected or required overflow {Math.Max(0, selected.Count - budget)}.");
+            return selected;
         }
+
+        internal static double LeftShare(IReadOnlyList<Note> notes) =>
+            notes.Count == 0 ? .5 : (double)notes.Count(note => note.Hand == 0) / notes.Count;
 
         internal static int BudgetFromFraction(int referenceCount, double fraction)
         {

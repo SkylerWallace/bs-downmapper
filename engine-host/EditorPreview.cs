@@ -60,13 +60,17 @@ internal static class EditorPreview
             bool matchRepeats = request["no-rhythm-links"]?.GetValue<bool>() != true;
             var priority = cache == null ? CreatePlan() : cache.Get(reference, matchRepeats, CreatePlan);
             double? fraction = request["target-note-fraction"]?.GetValue<double>();
-            selected = TimingPreparation.Select(prepared, priority, target, required, fraction);
+            var immediateHigher = song.Read(higher.Keys.Last());
+            selected = TimingPreparation.Select(prepared, priority, target, required, fraction,
+                immediateHigher.Gameplay.Notes);
+            var budgetRhythm = selected;
             double adherence = StandardSong.Number(request["parity-adherence"] ?? profiles[target]["parityAdherence"]);
             if (!double.IsFinite(adherence) || adherence < 0 || adherence > 1)
                 throw new InvalidDataException("Parity adherence must be between zero and one.");
             var runtime = new DirectionRuntime(Path.Combine(root, ".tools", "quickjs-runtime"));
+            bool repairHands = request["repair-hand-assignments"]?.GetValue<bool>() == true;
             selected = await TimingParityRepair.RestoreAuthoredSwings(prepared, selected, runtime, adherence: adherence,
-                repairHandAssignments: request["repair-hand-assignments"]?.GetValue<bool>() == true);
+                repairHandAssignments: repairHands);
             double alternation = StandardSong.Number(request["hand-alternation"] ?? profiles[target]["handAlternation"]);
             double maximumGap = double.IsFinite(alternation) ? Math.Clamp(alternation, 0, 1.5) : 0;
             bool comparePlacement = maximumGap > 0 && adherence >= 1 &&
@@ -105,9 +109,19 @@ internal static class EditorPreview
                 profile["parityAdherence"] = adherence;
                 var foundation = song.Read(request["source-difficulty"]?.GetValue<string>() ?? higher.Keys.First());
                 var (speed, _, halfJump) = EditorGeneration.JumpSettings(song, level.Bpm, target, null);
-                selected = await EditorTimingPlacement.Compare(prepared, selected, foundation, song.Read(higher.Keys.Last()),
-                    profile, defaultAdherence, maximumGap, speed, halfJump * 60 / level.Bpm, runtime, matchRepeats);
+                var ranked = TimingPreparation.Select(prepared, priority, target, required, fraction,
+                    immediateHigher.Gameplay.Notes, balanceHands: false);
+                var rankedBudgetRhythm = ranked;
+                ranked = await TimingParityRepair.RestoreAuthoredSwings(prepared, ranked, runtime,
+                    adherence: adherence, repairHandAssignments: repairHands);
+                selected = await EditorTimingPlacement.Compare(prepared, selected, foundation, immediateHigher,
+                    profile, defaultAdherence, maximumGap, speed, halfJump * 60 / level.Bpm, runtime, matchRepeats,
+                    TimingPreparation.LeftShare(reference.Gameplay.Notes), ranked, budgetRhythm, rankedBudgetRhythm,
+                    required, fraction.HasValue);
             }
+            if (selected.Count > budgetRhythm.Count)
+                Console.Error.WriteLine($"{target} parity timing repair restored {selected.Count - budgetRhythm.Count} " +
+                    $"notes above the selected budget ({budgetRhythm.Count} -> {selected.Count}).");
 
             NativeReferencePlan CreatePlan()
             {

@@ -169,7 +169,8 @@ namespace BsDownmap.Engine
 
         public static IReadOnlyList<Note> Select(
             IReadOnlyList<Note> reference, IReadOnlyList<int> order, IReadOnlyList<Note> eligible,
-            int budget, IEnumerable<int> protectedIds, IEnumerable<double> requiredBeats, bool sourceIsReference)
+            int budget, IEnumerable<int> protectedIds, IEnumerable<double> requiredBeats, bool sourceIsReference,
+            double? targetLeftShare = null)
         {
             var byId = eligible.ToDictionary(note => note.Id);
             var groups = Group(eligible);
@@ -194,8 +195,24 @@ namespace BsDownmap.Engine
             if (mandatory.Any(id => !byId.ContainsKey(id)))
                 throw new InvalidDataException("A protected timing is missing from the eligible higher charts.");
             int remaining = Math.Max(0, budget - mandatory.Count);
+            var optional = available.Where(note => !mandatory.Contains(note.Id)).ToArray();
+            var selected = optional.Take(remaining).ToList();
+            if (targetLeftShare is double share)
+            {
+                int targetLeft = (int)Math.Round((mandatory.Count + selected.Count) * share);
+                int left = mandatory.Count(id => byId[id].Hand == 0) + selected.Count(note => note.Hand == 0);
+                int wantedHand = left < targetLeft ? 0 : 1;
+                var replacements = new Queue<Note>(optional.Skip(selected.Count).Where(note => note.Hand == wantedHand));
+                for (int i = selected.Count - 1; i >= 0 && left != targetLeft && replacements.Count != 0; i--)
+                {
+                    if (selected[i].Hand == wantedHand)
+                        continue;
+                    selected[i] = replacements.Dequeue();
+                    left += wantedHand == 0 ? 1 : -1;
+                }
+            }
             var result = available.Where(note => mandatory.Contains(note.Id))
-                .Concat(available.Where(note => !mandatory.Contains(note.Id)).Take(remaining))
+                .Concat(selected)
                 .OrderBy(note => note.Beat).ThenBy(note => note.Hand).ThenBy(note => note.Id).ToArray();
             if (result.Length == 0) throw new InvalidDataException("The nested timing model found no eligible notes.");
             return result;
